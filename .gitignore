@@ -1,0 +1,13 @@
+/build/
+/release/
+/state/
+/Hide.exe
+__pycache__/
+*.pyc
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+.vs/
+/%SystemDrive%/

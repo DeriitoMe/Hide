@@ -1,0 +1,31 @@
+{
+  "active_marker": false,
+  "original_paths_preserved": true,
+  "scheme": "Ikaros",
+  "test": "direct system fade then terminate own process",
+  "crash_before": {
+    "pid": 44720,
+    "enabled": true,
+    "supported": true,
+    "faded": true,
+    "transparency": 75,
+    "keyboard_events": 0,
+    "text_events": 0,
+    "mouse_events": 0,
+    "focus_queries": 0,
+    "focus_failures": 0,
+    "focus_state": 0,
+    "fade_count": 1,
+    "restore_count": 0,
+    "last_fade_ms": 55.117,
+    "max_fade_ms": 55.117,
+    "working_set_bytes": 26820608,
+    "private_bytes": 4218880,
+    "guardian_working_set_bytes": 8978432,
+    "guardian_private_bytes": 1593344,
+    "handles": 337,
+    "gdi_handles": 14,
+    "user_handles": 31
+  },
+  "exit_code": 99
+}

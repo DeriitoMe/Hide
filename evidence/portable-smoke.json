@@ -1,0 +1,10 @@
+{
+  "default_transparency": 75,
+  "passed": true,
+  "recovery_exit_code": 99,
+  "recovery_marker_cleared": true,
+  "supported": true,
+  "exe_sha256": "D429210546C09968EA7B620EE2E7BAE0D9FDA947B7B4BBC77C0390AC2A0024D9",
+  "duplicate_start_keeps_enabled": true,
+  "clean_extraction": true
+}

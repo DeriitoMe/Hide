@@ -1,0 +1,4 @@
+MSVC 14.51.36231, Windows SDK 10.0.26100.0
+C++17 Release /O2 /MT /W4 /guard:cf
+Hide build: success, no warnings
+PASS: 20044 assertions, keyboard policy, focus races, restoration, 10,000 transitions.

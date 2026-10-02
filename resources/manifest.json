@@ -1,0 +1,70 @@
+[
+  {
+    "file": "Alternate.ani",
+    "sha256": "b8908db526af68da4e427245fe60291159ca62a821e5f52b57af897a9e6e3124"
+  },
+  {
+    "file": "Busy.ani",
+    "sha256": "a41e789e30f66baf1f703bf770e6a32a10a0d616a1a8f37b62edadf21f2b9c95"
+  },
+  {
+    "file": "Diagonal1.ani",
+    "sha256": "d6ea99ffd366336cff70f75d80e80a61d8d878bfb0ff7ea07459476c3b2979ce"
+  },
+  {
+    "file": "Diagonal2.ani",
+    "sha256": "a56be744d7345e35e2cbe392652ee3cfd36352bfbc0d4b0fdfdd1951d6b52fb4"
+  },
+  {
+    "file": "Handwriting.ani",
+    "sha256": "e5f09f2632b64221cd32078bf344cad54fce2e99978688a77e2aa8413e16a8c5"
+  },
+  {
+    "file": "Help.ani",
+    "sha256": "e65c5e3708054009a63f3096b83d3a71a050f19bbbe5701766c6e271fdaab329"
+  },
+  {
+    "file": "Horizontal.ani",
+    "sha256": "561146c8dee24e0318978e354b820ffde864d437592874402aa020530b900d9e"
+  },
+  {
+    "file": "Link.ani",
+    "sha256": "100a650b2dc0ca508dcdfdee4ab9c29c0856ad94cde87000f280a651ea80ee39"
+  },
+  {
+    "file": "Move.ani",
+    "sha256": "46dac86923b08dc3838d9e7270809253bda2941e375c9ea167ce610823e6970a"
+  },
+  {
+    "file": "Normal.ani",
+    "sha256": "29a6357447941b6925c680ef4dbf158cad3b6f16b4a26f9523bdf7c96c8999bf"
+  },
+  {
+    "file": "Person.cur",
+    "sha256": "4534ec10ae3767c71acb15f22b388d73b0b594e685dbcba1d2952c8a4cfa6774"
+  },
+  {
+    "file": "Pin.cur",
+    "sha256": "1fd61c31306de47f35a964a475c416474d1b2e0e9b361e2333ea9a1655c7da2b"
+  },
+  {
+    "file": "Precision.ani",
+    "sha256": "f571c831efe43ce04cff5ed5bf690aec68f8f295ce6460f184d55671dd1c51c8"
+  },
+  {
+    "file": "Text.ani",
+    "sha256": "973dedea777d3d01b368f44e0d5572ee55f5c484fcceff6aabd03258984beb27"
+  },
+  {
+    "file": "Unavailable.ani",
+    "sha256": "84dd5a865d863fc14f9f902660af058fc4aed6ca5385954ec8471a6535279ffa"
+  },
+  {
+    "file": "Vertical.ani",
+    "sha256": "c2e624956eafc738c644939d66299c3ef05b421ee2e4ebde5c299cf649be957a"
+  },
+  {
+    "file": "Working.ani",
+    "sha256": "432ccfd32a3cb39d539592664bbd5455dc6880197c9e85cb0f0225a35aa9e302"
+  }
+]

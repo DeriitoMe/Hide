@@ -1,0 +1,73 @@
+{
+  "cpu_last": [
+    {
+      "cpu_seconds": 0.015625,
+      "pid": 50904
+    },
+    {
+      "cpu_seconds": 0.453125,
+      "pid": 54948
+    }
+  ],
+  "cpu_first": [
+    {
+      "cpu_seconds": 0.015625,
+      "pid": 50904
+    },
+    {
+      "cpu_seconds": 0.40625,
+      "pid": 54948
+    }
+  ],
+  "one_core_cpu_percent": 0.15619900050567156,
+  "cpu_delta_seconds": 0.046875,
+  "last": {
+    "pid": 54948,
+    "enabled": true,
+    "supported": true,
+    "faded": false,
+    "transparency": 75,
+    "keyboard_events": 0,
+    "text_events": 0,
+    "mouse_events": 0,
+    "focus_queries": 3,
+    "focus_failures": 0,
+    "focus_state": 2,
+    "fade_count": 0,
+    "restore_count": 0,
+    "last_fade_ms": 0.0,
+    "max_fade_ms": 0.0,
+    "working_set_bytes": 30060544,
+    "private_bytes": 5156864,
+    "guardian_working_set_bytes": 8921088,
+    "guardian_private_bytes": 1486848,
+    "handles": 381,
+    "gdi_handles": 7,
+    "user_handles": 48
+  },
+  "first": {
+    "pid": 54948,
+    "enabled": true,
+    "supported": true,
+    "faded": false,
+    "transparency": 75,
+    "keyboard_events": 0,
+    "text_events": 0,
+    "mouse_events": 0,
+    "focus_queries": 1,
+    "focus_failures": 0,
+    "focus_state": 2,
+    "fade_count": 0,
+    "restore_count": 0,
+    "last_fade_ms": 0.0,
+    "max_fade_ms": 0.0,
+    "working_set_bytes": 29900800,
+    "private_bytes": 5001216,
+    "guardian_working_set_bytes": 8970240,
+    "guardian_private_bytes": 1581056,
+    "handles": 378,
+    "gdi_handles": 7,
+    "user_handles": 48
+  },
+  "elapsed_seconds": 30.0097951
+}

@@ -1,0 +1,415 @@
+{
+  "passed": true,
+  "original_files_verified": 17,
+  "variants_verified": 68,
+  "checks": [
+    {
+      "file": "Alternate.ani",
+      "variant": "fade50",
+      "frames": 8,
+      "alpha_max": 128
+    },
+    {
+      "file": "Alternate.ani",
+      "variant": "fade75",
+      "frames": 8,
+      "alpha_max": 64
+    },
+    {
+      "file": "Alternate.ani",
+      "variant": "fade90",
+      "frames": 8,
+      "alpha_max": 26
+    },
+    {
+      "file": "Alternate.ani",
+      "variant": "hidden",
+      "frames": 8,
+      "alpha_max": 0
+    },
+    {
+      "file": "Busy.ani",
+      "variant": "fade50",
+      "frames": 8,
+      "alpha_max": 128
+    },
+    {
+      "file": "Busy.ani",
+      "variant": "fade75",
+      "frames": 8,
+      "alpha_max": 64
+    },
+    {
+      "file": "Busy.ani",
+      "variant": "fade90",
+      "frames": 8,
+      "alpha_max": 26
+    },
+    {
+      "file": "Busy.ani",
+      "variant": "hidden",
+      "frames": 8,
+      "alpha_max": 0
+    },
+    {
+      "file": "Diagonal1.ani",
+      "variant": "fade50",
+      "frames": 8,
+      "alpha_max": 128
+    },
+    {
+      "file": "Diagonal1.ani",
+      "variant": "fade75",
+      "frames": 8,
+      "alpha_max": 64
+    },
+    {
+      "file": "Diagonal1.ani",
+      "variant": "fade90",
+      "frames": 8,
+      "alpha_max": 26
+    },
+    {
+      "file": "Diagonal1.ani",
+      "variant": "hidden",
+      "frames": 8,
+      "alpha_max": 0
+    },
+    {
+      "file": "Diagonal2.ani",
+      "variant": "fade50",
+      "frames": 8,
+      "alpha_max": 128
+    },
+    {
+      "file": "Diagonal2.ani",
+      "variant": "fade75",
+      "frames": 8,
+      "alpha_max": 64
+    },
+    {
+      "file": "Diagonal2.ani",
+      "variant": "fade90",
+      "frames": 8,
+      "alpha_max": 26
+    },
+    {
+      "file": "Diagonal2.ani",
+      "variant": "hidden",
+      "frames": 8,
+      "alpha_max": 0
+    },
+    {
+      "file": "Handwriting.ani",
+      "variant": "fade50",
+      "frames": 8,
+      "alpha_max": 128
+    },
+    {
+      "file": "Handwriting.ani",
+      "variant": "fade75",
+      "frames": 8,
+      "alpha_max": 64
+    },
+    {
+      "file": "Handwriting.ani",
+      "variant": "fade90",
+      "frames": 8,
+      "alpha_max": 26
+    },
+    {
+      "file": "Handwriting.ani",
+      "variant": "hidden",
+      "frames": 8,
+      "alpha_max": 0
+    },
+    {
+      "file": "Help.ani",
+      "variant": "fade50",
+      "frames": 8,
+      "alpha_max": 128
+    },
+    {
+      "file": "Help.ani",
+      "variant": "fade75",
+      "frames": 8,
+      "alpha_max": 64
+    },
+    {
+      "file": "Help.ani",
+      "variant": "fade90",
+      "frames": 8,
+      "alpha_max": 26
+    },
+    {
+      "file": "Help.ani",
+      "variant": "hidden",
+      "frames": 8,
+      "alpha_max": 0
+    },
+    {
+      "file": "Horizontal.ani",
+      "variant": "fade50",
+      "frames": 8,
+      "alpha_max": 128
+    },
+    {
+      "file": "Horizontal.ani",
+      "variant": "fade75",
+      "frames": 8,
+      "alpha_max": 64
+    },
+    {
+      "file": "Horizontal.ani",
+      "variant": "fade90",
+      "frames": 8,
+      "alpha_max": 26
+    },
+    {
+      "file": "Horizontal.ani",
+      "variant": "hidden",
+      "frames": 8,
+      "alpha_max": 0
+    },
+    {
+      "file": "Link.ani",
+      "variant": "fade50",
+      "frames": 8,
+      "alpha_max": 128
+    },
+    {
+      "file": "Link.ani",
+      "variant": "fade75",
+      "frames": 8,
+      "alpha_max": 64
+    },
+    {
+      "file": "Link.ani",
+      "variant": "fade90",
+      "frames": 8,
+      "alpha_max": 26
+    },
+    {
+      "file": "Link.ani",
+      "variant": "hidden",
+      "frames": 8,
+      "alpha_max": 0
+    },
+    {
+      "file": "Move.ani",
+      "variant": "fade50",
+      "frames": 8,
+      "alpha_max": 128
+    },
+    {
+      "file": "Move.ani",
+      "variant": "fade75",
+      "frames": 8,
+      "alpha_max": 64
+    },
+    {
+      "file": "Move.ani",
+      "variant": "fade90",
+      "frames": 8,
+      "alpha_max": 26
+    },
+    {
+      "file": "Move.ani",
+      "variant": "hidden",
+      "frames": 8,
+      "alpha_max": 0
+    },
+    {
+      "file": "Normal.ani",
+      "variant": "fade50",
+      "frames": 8,
+      "alpha_max": 128
+    },
+    {
+      "file": "Normal.ani",
+      "variant": "fade75",
+      "frames": 8,
+      "alpha_max": 64
+    },
+    {
+      "file": "Normal.ani",
+      "variant": "fade90",
+      "frames": 8,
+      "alpha_max": 26
+    },
+    {
+      "file": "Normal.ani",
+      "variant": "hidden",
+      "frames": 8,
+      "alpha_max": 0
+    },
+    {
+      "file": "Person.cur",
+      "variant": "fade50",
+      "frames": 1,
+      "alpha_max": 128
+    },
+    {
+      "file": "Person.cur",
+      "variant": "fade75",
+      "frames": 1,
+      "alpha_max": 64
+    },
+    {
+      "file": "Person.cur",
+      "variant": "fade90",
+      "frames": 1,
+      "alpha_max": 26
+    },
+    {
+      "file": "Person.cur",
+      "variant": "hidden",
+      "frames": 1,
+      "alpha_max": 0
+    },
+    {
+      "file": "Pin.cur",
+      "variant": "fade50",
+      "frames": 1,
+      "alpha_max": 128
+    },
+    {
+      "file": "Pin.cur",
+      "variant": "fade75",
+      "frames": 1,
+      "alpha_max": 64
+    },
+    {
+      "file": "Pin.cur",
+      "variant": "fade90",
+      "frames": 1,
+      "alpha_max": 26
+    },
+    {
+      "file": "Pin.cur",
+      "variant": "hidden",
+      "frames": 1,
+      "alpha_max": 0
+    },
+    {
+      "file": "Precision.ani",
+      "variant": "fade50",
+      "frames": 8,
+      "alpha_max": 128
+    },
+    {
+      "file": "Precision.ani",
+      "variant": "fade75",
+      "frames": 8,
+      "alpha_max": 64
+    },
+    {
+      "file": "Precision.ani",
+      "variant": "fade90",
+      "frames": 8,
+      "alpha_max": 26
+    },
+    {
+      "file": "Precision.ani",
+      "variant": "hidden",
+      "frames": 8,
+      "alpha_max": 0
+    },
+    {
+      "file": "Text.ani",
+      "variant": "fade50",
+      "frames": 8,
+      "alpha_max": 128
+    },
+    {
+      "file": "Text.ani",
+      "variant": "fade75",
+      "frames": 8,
+      "alpha_max": 64
+    },
+    {
+      "file": "Text.ani",
+      "variant": "fade90",
+      "frames": 8,
+      "alpha_max": 26
+    },
+    {
+      "file": "Text.ani",
+      "variant": "hidden",
+      "frames": 8,
+      "alpha_max": 0
+    },
+    {
+      "file": "Unavailable.ani",
+      "variant": "fade50",
+      "frames": 8,
+      "alpha_max": 128
+    },
+    {
+      "file": "Unavailable.ani",
+      "variant": "fade75",
+      "frames": 8,
+      "alpha_max": 64
+    },
+    {
+      "file": "Unavailable.ani",
+      "variant": "fade90",
+      "frames": 8,
+      "alpha_max": 26
+    },
+    {
+      "file": "Unavailable.ani",
+      "variant": "hidden",
+      "frames": 8,
+      "alpha_max": 0
+    },
+    {
+      "file": "Vertical.ani",
+      "variant": "fade50",
+      "frames": 8,
+      "alpha_max": 128
+    },
+    {
+      "file": "Vertical.ani",
+      "variant": "fade75",
+      "frames": 8,
+      "alpha_max": 64
+    },
+    {
+      "file": "Vertical.ani",
+      "variant": "fade90",
+      "frames": 8,
+      "alpha_max": 26
+    },
+    {
+      "file": "Vertical.ani",
+      "variant": "hidden",
+      "frames": 8,
+      "alpha_max": 0
+    },
+    {
+      "file": "Working.ani",
+      "variant": "fade50",
+      "frames": 8,
+      "alpha_max": 128
+    },
+    {
+      "file": "Working.ani",
+      "variant": "fade75",
+      "frames": 8,
+      "alpha_max": 64
+    },
+    {
+      "file": "Working.ani",
+      "variant": "fade90",
+      "frames": 8,
+      "alpha_max": 26
+    },
+    {
+      "file": "Working.ani",
+      "variant": "hidden",
+      "frames": 8,
+      "alpha_max": 0
+    }
+  ]
+}

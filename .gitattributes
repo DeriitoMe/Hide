@@ -1,0 +1,11 @@
+* text=auto eol=lf
+*.cpp text eol=lf
+*.hpp text eol=lf
+*.md text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.ps1 text eol=lf
+*.cmd text eol=crlf
+*.ani binary
+*.cur binary
+*.ico binary
