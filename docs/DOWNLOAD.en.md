@@ -1,23 +1,23 @@
 # Download and run Hide
 
-Hide runs directly on Windows 10/11 x64. It does not require Codex, a GitHub client, Python, or .NET.
+Hide runs on Windows 10/11 x64 without Codex, a GitHub client, Python, .NET, or a mouse driver.
 
-**This beta requires the exact tested Ikaros cursor files to be installed and selected beforehand.** It checks file hashes; another skin or a different Ikaros version will be rejected. It does not install a cursor skin for you.
+1. [Download Hide-windows-x64.zip](https://github.com/DeriitoMe/Hide/releases/download/v1.0.0-beta.2/Hide-windows-x64.zip), or open the [release page](https://github.com/DeriitoMe/Hide/releases/tag/v1.0.0-beta.2) and choose that file under **Assets**.
+2. Extract the ZIP into a writable folder.
+3. Open the Hide folder and double-click **Hide.exe** or **Start-Hide.cmd**.
+4. Find Hide in the Windows system tray; expand hidden icons if needed. The tray menu is currently in Chinese.
+5. Type in an editable field. Your cursor becomes 75% transparent by default. Moving about 3 screen pixels, clicking, scrolling, or stopping typing for about 1.5 seconds restores it.
 
-1. [Download Hide-windows-x64.zip](https://github.com/DeriitoMe/Hide/releases/download/v1.0.0-beta.1/Hide-windows-x64.zip), or open the [release page](https://github.com/DeriitoMe/Hide/releases/tag/v1.0.0-beta.1) and select that file under Assets. Public downloads work in a browser.
-2. Extract the entire ZIP into a writable folder.
-3. Open the extracted Hide folder and double-click Hide.exe or Start-Hide.cmd. Keep resources and the other files beside the executable.
-4. Find Hide in the Windows system tray; expand hidden tray icons if needed. The menu is currently in Chinese.
-5. Start typing in an editable field. The cursor becomes 75% transparent by default, then returns when you move it about 3 screen pixels, click, scroll, or stop typing for about 1.5 seconds.
+Hide follows your current Windows cursor scheme. Apply a new scheme in Windows Mouse Properties and it will prepare matching transparent cursors locally. Common static CUR and animated ANI files are supported. Your original files remain intact; the portable package uses your installed skin.
 
-Right-click the tray icon for transparency, hide, pause, idle restoration, per-app detection, and startup options. Startup is off by default.
+Right-click the tray for transparency, complete hiding, pause, idle restoration, per-app detection and startup. Startup is off by default. “重新识别当前皮肤” rescans the current skin.
 
-Ctrl+Alt+F12 immediately restores the cursor and pauses Hide. Use the tray menu to enable it again. Exit with the tray's “退出并恢复皮肤” command. If needed, run Recover-Cursor.cmd to pause Hide and reload the normal cursor scheme.
+**Ctrl+Alt+F12** immediately restores and pauses Hide. Enable it again through the tray. Exit with “退出并恢复皮肤”. For recovery, run **Recover-Cursor.cmd**. A separate guardian reloads your latest cursor settings after an unexpected termination.
 
-Before upgrading, moving, or deleting the folder, exit normally. Before uninstalling, disable startup if you enabled it.
+Exit before upgrading or moving the folder. Before uninstalling, disable startup if enabled. Settings are stored in state/settings.ini. If an older version left a scheme label inconsistent with its actual cursor paths, apply your intended scheme once in Windows Mouse Properties.
 
-The Assets file named Hide-windows-x64.zip contains the ready-to-run application. Source code (zip) and Source code (tar.gz) contain source for developers.
+The ready-to-run file is **Hide-windows-x64.zip**. GitHub's **Source code** archives are for developers. Optional SHA256SUMS.txt is on the same release page; compare it with Get-FileHash .\Hide-windows-x64.zip -Algorithm SHA256. This build is unsigned.
 
-Optional integrity check: download SHA256SUMS.txt from the same release, run Get-FileHash .\Hide-windows-x64.zip -Algorithm SHA256 in PowerShell, and compare the hash. This build is not code-signed.
+Compatibility is based on tested formats and samples. Complex colored XOR, compressed bitmap formats, oversized resources and system animations with unavailable full sources may not support partial fading. Unsupported schemes keep their normal appearance; complete hiding may work. Application-drawn cursors, games, elevated windows and protected desktops have separate limitations.
 
-This is a prerelease. Long-running use, sleep/lock cycles, IME workflows, and compatibility across applications need further testing. [Validation report](VALIDATION.md) and [issues](https://github.com/DeriitoMe/Hide/issues).
+This is a prerelease. Long-term use, sleep/lock cycles, IME workflows and compatibility across applications need further testing. [Validation report](VALIDATION.md) · [Issues](https://github.com/DeriitoMe/Hide/issues).

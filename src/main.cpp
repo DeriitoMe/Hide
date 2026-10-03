@@ -5,6 +5,7 @@
 #include <oleauto.h>
 #include <UIAutomation.h>
 #include "input_state.hpp"
+#include "scheme_tracker.hpp"
 #include <algorithm>
 #include <atomic>
 #include <bcrypt.h>
@@ -23,21 +24,17 @@ using namespace typing_cursor;
 
 constexpr UINT M_TEXT = WM_APP + 1, M_MOUSE = WM_APP + 2, M_FOCUS = WM_APP + 3,
                M_RESOLVE = WM_APP + 4, M_TRAY = WM_APP + 5, M_STATUS = WM_APP + 6,
-               M_PAUSE = WM_APP + 7;
+               M_PAUSE = WM_APP + 7, M_SCHEME = WM_APP + 8, M_PREPARED = WM_APP + 9,
+               M_TEST_FADE = WM_APP + 10, M_TEST_RESTORE = WM_APP + 11;
 constexpr UINT C_ENABLE = 100, C_50 = 150, C_75 = 175, C_90 = 190, C_HIDE = 200, C_IDLE = 210,
                C_FORCE = 220, C_EXCLUDE = 221, C_AUTO = 222, C_STARTUP = 230, C_RESTORE = 240,
-               C_EXIT = 250;
+               C_RESCAN = 241, C_EXIT = 250;
 static const wchar_t *CLASS_NAME = L"Hide.Native.v1";
 static const wchar_t *ROLES[] = {L"Arrow",    L"Help",     L"AppStarting", L"Wait",    L"Crosshair",
                                  L"IBeam",    L"NWPen",    L"No",          L"SizeNS",  L"SizeWE",
                                  L"SizeNWSE", L"SizeNESW", L"SizeAll",     L"UpArrow", L"Hand",
                                  L"Pin",      L"Person"};
-static const wchar_t *FILES[] = {
-    L"Normal.ani",    L"Help.ani",        L"Working.ani",     L"Busy.ani",      L"Precision.ani",
-    L"Text.ani",      L"Handwriting.ani", L"Unavailable.ani", L"Vertical.ani",  L"Horizontal.ani",
-    L"Diagonal1.ani", L"Diagonal2.ani",   L"Move.ani",        L"Alternate.ani", L"Link.ani",
-    L"Pin.cur",       L"Person.cur"};
-static std::wstring base, resources, journal_path, settings_path, active_path;
+static std::wstring base, legacy_resources, journal_path, settings_path, active_path;
 static HWND main_window = nullptr, test_edit = nullptr;
 static HANDLE stop_event = nullptr, focus_event = nullptr, input_ready = nullptr,
               worker_thread = nullptr, input_thread = nullptr;
@@ -55,7 +52,8 @@ static std::atomic<bool> pending_new_text{false};
 static std::atomic<LONG> force_pid{0}, exclude_pid{0};
 static InputState policy;
 static bool applied = false, shadow_was_on = false, shadow_changed = false, tray_added = false,
-            supported = false, integration = false, crash_test = false, stress_test = false;
+            supported = false, integration = false, crash_test = false, stress_test = false,
+            backend_test = false;
 static int transparency = 75;
 static uint64_t fade_count = 0, restore_count = 0;
 static double last_fade_ms = 0, max_fade_ms = 0;
@@ -80,7 +78,12 @@ struct Record {
     bool exists = false;
     std::vector<BYTE> bytes;
 };
-static std::vector<Record> original;
+static hide_cursor::SchemeTracker scheme_tracker;
+static std::unique_ptr<hide_cursor::Prepared> prepared_scheme;
+static bool preparing_scheme = true;
+static uint64_t scheme_changes = 0;
+static std::string scheme_error;
+static void scheme_changed(bool force = false);
 
 static std::wstring join(const std::wstring &a, const std::wstring &b) { return a + L"\\" + b; }
 static bool ensure_directory(const std::wstring &p) {
@@ -121,9 +124,6 @@ static Record read_role(HKEY k, const wchar_t *name) {
         throw std::runtime_error("registry changed during read");
     return r;
 }
-static bool equal(const Record &a, const Record &b) {
-    return a.exists == b.exists && a.type == b.type && a.bytes == b.bytes;
-}
 static std::wstring record_string(const Record &r) {
     if (!r.exists || (r.type != REG_SZ && r.type != REG_EXPAND_SZ) || r.bytes.size() % 2 ||
         r.bytes.size() < 2)
@@ -137,53 +137,12 @@ static std::wstring record_string(const Record &r) {
 }
 static bool owned(const Record &r) {
     auto s = lower(record_string(r));
-    auto prefix = lower(resources + L"\\");
+    auto prefix = lower(legacy_resources + L"\\");
     return s.size() > prefix.size() && s.compare(0, prefix.size(), prefix) == 0;
 }
 static LONG write_role(HKEY k, size_t i, const Record &r) {
     return r.exists ? RegSetValueExW(k, ROLES[i], 0, r.type, r.bytes.data(), (DWORD)r.bytes.size())
                     : RegDeleteValueW(k, ROLES[i]);
-}
-static std::vector<Record> capture() {
-    HKEY k = nullptr;
-    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Control Panel\\Cursors", 0, KEY_QUERY_VALUE, &k) !=
-        ERROR_SUCCESS)
-        throw std::runtime_error("cursor registry unavailable");
-    std::vector<Record> r;
-    try {
-        for (auto name : ROLES)
-            r.push_back(read_role(k, name));
-    } catch (...) {
-        RegCloseKey(k);
-        throw;
-    }
-    RegCloseKey(k);
-    return r;
-}
-static bool write_journal(const std::vector<Record> &rs) {
-    auto tmp = journal_path + L".tmp";
-    HANDLE f = CreateFileW(tmp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
-                           FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (f == INVALID_HANDLE_VALUE)
-        return false;
-    auto put = [&](const void *p, DWORD n) {
-        DWORD out = 0;
-        return WriteFile(f, p, n, &out, nullptr) && out == n;
-    };
-    DWORD header[3] = {0x54435031, (DWORD)rs.size(), shadow_was_on ? 1u : 0u};
-    bool ok = put(header, sizeof(header));
-    for (const auto &r : rs) {
-        DWORD h[3] = {r.exists ? 1u : 0u, r.type, (DWORD)r.bytes.size()};
-        ok = ok && put(h, sizeof(h)) && put(r.bytes.data(), h[2]);
-    }
-    ok = ok && FlushFileBuffers(f);
-    CloseHandle(f);
-    if (!ok) {
-        DeleteFileW(tmp.c_str());
-        return false;
-    }
-    return MoveFileExW(tmp.c_str(), journal_path.c_str(),
-                       MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != FALSE;
 }
 static bool read_journal(std::vector<Record> &rs, bool &shadow) {
     HANDLE f = CreateFileW(journal_path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
@@ -229,6 +188,20 @@ static bool read_journal(std::vector<Record> &rs, bool &shadow) {
     return ok;
 }
 static bool restore_owned(bool restore_shadow) {
+    // v2 modifies only live system cursor objects. Current user settings are authoritative.
+    HANDLE marker =
+        CreateFileW(active_path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                    OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    DWORD magic = 0, got = 0;
+    bool legacy_marker = false;
+    if (marker != INVALID_HANDLE_VALUE) {
+        LARGE_INTEGER size{};
+        legacy_marker = GetFileSizeEx(marker, &size) && size.QuadPart == 0;
+        ReadFile(marker, &magic, sizeof(magic), &got, nullptr);
+        CloseHandle(marker);
+    }
+    if (!legacy_marker || (got == sizeof(magic) && magic == 0x32444948))
+        return SystemParametersInfoW(SPI_SETCURSORS, 0, nullptr, 0) != FALSE;
     std::vector<Record> rs;
     bool sh = false;
     bool have = read_journal(rs, sh);
@@ -264,10 +237,6 @@ static bool restore_owned(bool restore_shadow) {
         ok = false;
     return ok;
 }
-static std::wstring mode_directory() {
-    return join(resources,
-                transparency == 100 ? L"hidden" : L"fade" + std::to_wstring(transparency));
-}
 static void refresh_pointer() {
     POINT p{};
     if (!GetCursorPos(&p))
@@ -282,85 +251,76 @@ static void refresh_pointer() {
 static bool fade() {
     if (applied)
         return true;
-    if (!supported || !guard_process)
+    if (!supported || preparing_scheme || !guard_process || !prepared_scheme ||
+        WaitForSingleObject(guard_process, 0) != WAIT_TIMEOUT)
         return false;
-    LARGE_INTEGER a{}, b{}, f{};
+    LARGE_INTEGER a{}, b{}, frequency{};
     QueryPerformanceCounter(&a);
-    QueryPerformanceFrequency(&f);
-    BOOL current_shadow = FALSE;
-    if (SystemParametersInfoW(SPI_GETCURSORSHADOW, 0, &current_shadow, 0) &&
-        (current_shadow != FALSE) != shadow_was_on) {
-        bool previous = shadow_was_on;
-        shadow_was_on = current_shadow != FALSE;
-        if (!write_journal(original)) {
-            shadow_was_on = previous;
+    QueryPerformanceFrequency(&frequency);
+    auto matches = [&]() {
+        try {
+            return prepared_scheme->version == scheme_tracker.version() &&
+                   prepared_scheme->source == hide_cursor::snapshot();
+        } catch (...) {
             return false;
         }
-    }
-    HKEY k = nullptr;
-    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Control Panel\\Cursors", 0,
-                      KEY_QUERY_VALUE | KEY_SET_VALUE, &k) != ERROR_SUCCESS)
+    };
+    if (!matches()) {
+        PostMessageW(main_window, M_SCHEME, 0, 0);
         return false;
-    bool ok = true;
-    try {
-        for (size_t i = 0; i < original.size(); ++i)
-            if (!equal(read_role(k, ROLES[i]), original[i])) {
-                ok = false;
-                break;
-            }
-        if (ok) {
-            HANDLE active = CreateFileW(active_path.c_str(), GENERIC_WRITE, FILE_SHARE_READ,
-                                        nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-            if (active == INVALID_HANDLE_VALUE) {
-                RegCloseKey(k);
-                return false;
-            }
-            FlushFileBuffers(active);
-            CloseHandle(active);
-            InterlockedExchange(&shared->dirty, 1);
-            for (size_t i = 0; i < original.size(); ++i) {
-                auto path = join(mode_directory(), FILES[i]);
-                if (RegSetValueExW(k, ROLES[i], 0, REG_SZ, (const BYTE *)path.c_str(),
-                                   (DWORD)((path.size() + 1) * sizeof(wchar_t))) != ERROR_SUCCESS) {
-                    ok = false;
-                    break;
-                }
-            }
-            if (ok)
-                ok = SystemParametersInfoW(SPI_SETCURSORS, 0, nullptr, 0) != FALSE;
-            // Persist normal paths again immediately. The live cursors remain
-            // faded until reload; an interrupted write is protected by the journal.
-            for (size_t i = 0; i < original.size(); ++i) {
-                auto current = read_role(k, ROLES[i]);
-                if (owned(current) && write_role(k, i, original[i]) != ERROR_SUCCESS)
-                    ok = false;
-            }
-        }
-    } catch (...) {
-        ok = false;
     }
-    RegCloseKey(k);
-    if (!ok) {
-        if (restore_owned(true)) {
+    HANDLE marker = CreateFileW(active_path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr,
+                                CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    DWORD magic = 0x32444948, wrote = 0;
+    bool journal_ok = marker != INVALID_HANDLE_VALUE &&
+                      WriteFile(marker, &magic, sizeof(magic), &wrote, nullptr) &&
+                      wrote == sizeof(magic) && FlushFileBuffers(marker);
+    if (marker != INVALID_HANDLE_VALUE)
+        CloseHandle(marker);
+    if (!journal_ok) {
+        log_error("cannot record live cursor recovery", GetLastError());
+        return false;
+    }
+    InterlockedExchange(&shared->dirty, 1);
+    applied = true;
+    bool ok = true;
+    for (size_t i = 0; i < _countof(hide_cursor::ids); ++i) {
+        if (prepared_scheme->version != scheme_tracker.version()) {
+            ok = false;
+            break;
+        }
+        // CopyIcon preserves static cursors but flattens ANI. A fresh file load preserves ANI
+        // sequence/rates.
+        HCURSOR copy = prepared_scheme->cursors[i]
+                           ? (HCURSOR)CopyIcon((HICON)prepared_scheme->cursors[i])
+                           : (HCURSOR)LoadImageW(nullptr, prepared_scheme->files[i].c_str(),
+                                                 IMAGE_CURSOR, prepared_scheme->sizes[i].cx,
+                                                 prepared_scheme->sizes[i].cy, LR_LOADFROMFILE);
+        if (!copy) {
+            ok = false;
+            break;
+        }
+        if (!SetSystemCursor(copy, hide_cursor::ids[i])) {
+            ok = false;
+            break;
+        }
+    }
+    if (!ok || !matches()) {
+        if (restore_owned(false)) {
+            applied = false;
             DeleteFileW(active_path.c_str());
             InterlockedExchange(&shared->dirty, 0);
-        } else
-            applied = true;
-        log_error("fade failed or cursor scheme changed", GetLastError());
+        }
         supported = false;
-        policy.pause(true);
+        log_error("live cursor application interrupted", GetLastError());
+        PostMessageW(main_window, M_SCHEME, 0, 0);
         return false;
     }
-    if (shadow_was_on) {
-        InterlockedExchange(&shared->shadow, 1);
-        shadow_changed = SystemParametersInfoW(SPI_SETCURSORSHADOW, 0, (PVOID)FALSE, 0) != FALSE;
-    }
-    applied = true;
     last_apply_tick = now();
     ++fade_count;
     refresh_pointer();
     QueryPerformanceCounter(&b);
-    last_fade_ms = (b.QuadPart - a.QuadPart) * 1000.0 / f.QuadPart;
+    last_fade_ms = (b.QuadPart - a.QuadPart) * 1000.0 / frequency.QuadPart;
     max_fade_ms = std::max(max_fade_ms, last_fade_ms);
     return true;
 }
@@ -386,7 +346,7 @@ static void reconcile() {
     monitor_mouse.store(policy.faded || policy.pending ? 1 : 0);
     if (policy.faded) {
         if (!fade())
-            policy.pause(true);
+            policy.faded = policy.pending = false;
     } else
         restore();
 }
@@ -561,11 +521,15 @@ static Focus query_focus(IUIAutomation *a, IUIAutomationCacheRequest *cache, HWN
         FILE *diagnostic = nullptr;
         _wfopen_s(&diagnostic, join(base, L"state\\integration-focus.json").c_str(), L"wb");
         if (diagnostic) {
-            fprintf(diagnostic, "{\"foreground_pid\":%lu,\"element_pid\":%d,\"control_type\":%d,\"enabled\":%d,\"value_pattern\":%d,\"read_only\":%d,\"own_foreground\":%s,\"edit_native_focus\":%s}\n",
+            fprintf(diagnostic,
+                    "{\"foreground_pid\":%lu,\"element_pid\":%d,\"control_type\":%d,\"enabled\":%d,"
+                    "\"value_pattern\":%d,\"read_only\":%d,\"own_foreground\":%s,\"edit_native_"
+                    "focus\":%s}\n",
                     pid, element_pid, type, cache_boolean(e.p, UIA_IsEnabledPropertyId),
                     cache_boolean(e.p, UIA_IsValuePatternAvailablePropertyId),
                     cache_boolean(e.p, UIA_ValueIsReadOnlyPropertyId),
-                    fg == main_window ? "true" : "false", gui.hwndFocus == test_edit ? "true" : "false");
+                    fg == main_window ? "true" : "false",
+                    gui.hwndFocus == test_edit ? "true" : "false");
             fclose(diagnostic);
         }
     }
@@ -722,8 +686,10 @@ static void update_tray() {
     n.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
     n.uCallbackMessage = M_TRAY;
     n.hIcon = tray_icon ? tray_icon : LoadIconW(nullptr, IDI_APPLICATION);
-    auto tip = policy.enabled ? L"Hide · 输入时" + std::to_wstring(transparency) + L"%透明"
-                              : L"Hide · 已暂停";
+    auto tip = !policy.enabled    ? std::wstring(L"Hide · 已暂停")
+               : preparing_scheme ? std::wstring(L"Hide · 正在准备当前皮肤")
+               : !supported       ? std::wstring(L"Hide · 当前皮肤淡化受限")
+                                  : L"Hide · 输入时" + std::to_wstring(transparency) + L"%透明";
     wcsncpy_s(n.szTip, tip.c_str(), _TRUNCATE);
     Shell_NotifyIconW(tray_added ? NIM_MODIFY : NIM_ADD, &n);
     tray_added = true;
@@ -744,6 +710,8 @@ static void menu() {
     AppendMenuW(m, MF_STRING, C_EXCLUDE, L"当前应用：暂停淡化");
     AppendMenuW(m, MF_STRING | (startup_enabled() ? MF_CHECKED : 0), C_STARTUP, L"随 Windows 启动");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(m, MF_STRING | MF_CHECKED | MF_GRAYED, 0, L"自动跟随当前鼠标皮肤");
+    AppendMenuW(m, MF_STRING, C_RESCAN, L"重新识别当前皮肤");
     AppendMenuW(m, MF_STRING, C_RESTORE, L"立即恢复并暂停  Ctrl+Alt+F12");
     AppendMenuW(m, MF_STRING, C_EXIT, L"退出并恢复皮肤");
     POINT p{};
@@ -806,7 +774,8 @@ static void status(const wchar_t *filename = L"status.json") {
             "%llu,\"focus_failures\":%llu,\"focus_state\":%d,\"fade_count\":%llu,\"restore_count\":"
             "%llu,\"last_fade_ms\":%.3f,\"max_fade_ms\":%.3f,\"working_set_bytes\":%llu,\"private_"
             "bytes\":%llu,\"guardian_working_set_bytes\":%llu,\"guardian_private_bytes\":%llu,"
-            "\"handles\":%lu,\"gdi_handles\":%lu,\"user_handles\":%lu}\n",
+            "\"handles\":%lu,\"gdi_handles\":%lu,\"user_handles\":%lu,\"preparing\":%s,"
+            "\"scheme_version\":%llu,\"scheme_changes\":%llu,\"queue_ms\":%llu}\n",
             GetCurrentProcessId(), policy.enabled ? "true" : "false", supported ? "true" : "false",
             applied ? "true" : "false", transparency, keys_seen.load(), text_seen.load(),
             mouse_seen.load(), focus_queries.load(), focus_failures.load(), (int)policy.focus,
@@ -814,7 +783,9 @@ static void status(const wchar_t *filename = L"status.json") {
             (unsigned long long)m.WorkingSetSize, (unsigned long long)m.PrivateUsage,
             (unsigned long long)gm.WorkingSetSize, (unsigned long long)gm.PrivateUsage, handles,
             GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS),
-            GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS));
+            GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS),
+            preparing_scheme ? "true" : "false", scheme_tracker.version(), scheme_changes,
+            last_queue_ms);
     fclose(f);
 }
 static bool spawn_guard() {
@@ -906,62 +877,80 @@ static int guardian(HANDLE parent, HANDLE done, HANDLE mapping) {
     CloseHandle(mapping);
     return ok ? 0 : 9;
 }
-static std::wstring file_hash(const std::wstring &path) {
-    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
-                           FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (f == INVALID_HANDLE_VALUE)
-        return L"";
-    BCRYPT_ALG_HANDLE a = nullptr;
-    BCRYPT_HASH_HANDLE h = nullptr;
-    BYTE hash[32]{};
-    bool ok = BCryptOpenAlgorithmProvider(&a, BCRYPT_SHA256_ALGORITHM, nullptr, 0) >= 0 &&
-              BCryptCreateHash(a, &h, nullptr, 0, nullptr, 0, 0) >= 0;
-    BYTE buf[8192];
-    DWORD n = 0;
-    while (ok) {
-        if (!ReadFile(f, buf, sizeof(buf), &n, nullptr)) {
-            ok = false;
-            break;
+static void scheme_changed(bool force) {
+    if (!force && !preparing_scheme && supported && prepared_scheme &&
+        prepared_scheme->transparency == unsigned(transparency)) {
+        try {
+            if (prepared_scheme->source == hide_cursor::snapshot()) {
+                prepared_scheme->version = scheme_tracker.version();
+                return;
+            }
+        } catch (...) {
         }
-        if (!n)
-            break;
-        ok = BCryptHashData(h, buf, n, 0) >= 0;
     }
-    if (ok)
-        ok = BCryptFinishHash(h, hash, sizeof(hash), 0) >= 0;
-    if (h)
-        BCryptDestroyHash(h);
-    if (a)
-        BCryptCloseAlgorithmProvider(a, 0);
-    CloseHandle(f);
-    if (!ok)
-        return L"";
-    wchar_t text[65]{};
-    for (size_t i = 0; i < 32; ++i)
-        swprintf_s(text + i * 2, 65 - i * 2, L"%02x", hash[i]);
-    return text;
+    scheme_tracker.invalidate();
+    supported = false;
+    preparing_scheme = true;
+    policy.faded = policy.pending = false;
+    policy.mouse(sequence.fetch_add(1) + 1);
+    latest_mouse.store(policy.mouse_sequence);
+    pending_new_text.store(false);
+    if (!restore()) {
+        scheme_error = "cursor recovery failed";
+        SetTimer(main_window, 3, 500, nullptr);
+        return;
+    }
+    prepared_scheme.reset();
+    ++scheme_changes;
+    KillTimer(main_window, 3);
+    SetTimer(main_window, 3, 100, nullptr);
+    update_tray();
 }
-static bool verify_resources() {
-    for (size_t i = 0; i < original.size(); ++i) {
-        auto p = record_string(original[i]);
-        if (p.empty())
-            return false;
-        wchar_t expanded[32768];
-        DWORD expanded_length = ExpandEnvironmentStringsW(p.c_str(), expanded, _countof(expanded));
-        if (!expanded_length || expanded_length > _countof(expanded))
-            return false;
-        auto expected = file_hash(join(resources, L"original\\" + std::wstring(FILES[i])));
-        if (expected.empty() || file_hash(expanded) != expected)
-            return false;
-        for (const wchar_t *mode : {L"fade50", L"fade75", L"fade90", L"hidden"}) {
-            auto path = join(resources, std::wstring(mode) + L"\\" + FILES[i]);
-            HCURSOR c = LoadCursorFromFileW(path.c_str());
-            if (!c)
-                return false;
-            DestroyCursor(c);
-        }
+static void prepare_scheme() {
+    KillTimer(main_window, 3);
+    if (applied && !restore()) {
+        SetTimer(main_window, 3, 500, nullptr);
+        return;
     }
-    return true;
+    try {
+        auto source = hide_cursor::snapshot();
+        if (!(hide_cursor::snapshot() == source)) {
+            SetTimer(main_window, 3, 100, nullptr);
+            return;
+        }
+        scheme_tracker.prepare(source, unsigned(transparency));
+    } catch (const std::exception &e) {
+        preparing_scheme = false;
+        supported = false;
+        scheme_error = e.what();
+        log_error("current cursor scheme unavailable");
+        update_tray();
+    }
+}
+static void scheme_ready() {
+    auto result = scheme_tracker.take();
+    if (!result || result->version != scheme_tracker.version())
+        return;
+    try {
+        if (!(result->source == hide_cursor::snapshot())) {
+            scheme_changed();
+            return;
+        }
+    } catch (...) {
+        scheme_changed();
+        return;
+    }
+    preparing_scheme = false;
+    supported = result->valid();
+    scheme_error = result->error;
+    prepared_scheme = std::move(result);
+    policy.faded = policy.pending = false;
+    update_tray();
+    if (!supported) {
+        log_error(scheme_error.c_str());
+        balloon(L"当前皮肤的淡化暂不可用",
+                L"已保留当前鼠标外观。可尝试完全隐藏，或更换方案后重新识别。");
+    }
 }
 static int cursor_alpha_max() {
     CURSORINFO ci{sizeof(ci)};
@@ -1035,6 +1024,15 @@ static void finish_test(bool ok, const char *reason) {
 static void integration_tick() {
     // Recovery is tested independently of foreground permission and input providers.
     // This mode switches the system cursor directly and kills only its own process.
+    if (preparing_scheme) {
+        if (now() > test_deadline)
+            finish_test(false, "scheme preparation timed out");
+        return;
+    }
+    if (!supported) {
+        finish_test(false, "current scheme is unsupported");
+        return;
+    }
     if (crash_test && test_phase == 0) {
         test_start = now();
         if (!fade()) {
@@ -1125,6 +1123,29 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT m, WPARAM wp, LPARAM lp) {
         return 0;
     }
     switch (m) {
+    case M_TEST_FADE:
+        if (!backend_test)
+            return 0;
+        policy.faded = true;
+        reconcile();
+        return applied ? 1 : 0;
+    case M_TEST_RESTORE:
+        if (!backend_test)
+            return 0;
+        policy.faded = policy.pending = false;
+        return restore() ? 1 : 0;
+    case M_SCHEME:
+        scheme_changed(wp != 0);
+        return 0;
+    case M_PREPARED:
+        scheme_ready();
+        return 0;
+    case WM_SETTINGCHANGE:
+        if (wp == SPI_SETCURSORS)
+            scheme_changed(true);
+        else if (wp == 0)
+            scheme_changed();
+        return 0;
     case M_TEXT: {
         text_pending.store(0);
         auto s = latest_text.load();
@@ -1180,12 +1201,10 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT m, WPARAM wp, LPARAM lp) {
             return 0;
         }
         if (cmd == C_ENABLE) {
-            if (supported)
-                policy.pause(policy.enabled);
-            else
-                balloon(L"Hide 已暂停",
-                        L"当前皮肤已改变。请退出后重新启动，或重新选择 Ikaros 方案。");
-        } else if (cmd == C_RESTORE)
+            policy.pause(policy.enabled);
+        } else if (cmd == C_RESCAN)
+            scheme_changed(true);
+        else if (cmd == C_RESTORE)
             policy.pause(true);
         else if (cmd == C_IDLE)
             policy.idle_ms = policy.idle_ms ? 0 : 1500;
@@ -1195,6 +1214,7 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT m, WPARAM wp, LPARAM lp) {
             policy.faded = policy.pending = false;
             restore();
             transparency = cmd == C_HIDE ? 100 : cmd - 100;
+            scheme_changed();
         }
         save_settings();
         reconcile();
@@ -1205,18 +1225,29 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT m, WPARAM wp, LPARAM lp) {
         if (wp == 1) {
             if (shared)
                 InterlockedExchange64(&shared->heartbeat, now());
+            if (guard_process && WaitForSingleObject(guard_process, 0) != WAIT_TIMEOUT &&
+                policy.enabled) {
+                policy.pause(true);
+                supported = false;
+                log_error("recovery guardian unavailable");
+                balloon(L"Hide 已暂停", L"恢复保护已停止，请退出后重新启动。");
+                update_tray();
+            }
             policy.tick(now());
             reconcile();
             if (requested_foreground.load() != GetForegroundWindow())
                 invalidate_focus();
         } else if (wp == 2)
             integration_tick();
+        else if (wp == 3)
+            prepare_scheme();
         return 0;
     case WM_WTSSESSION_CHANGE:
         if (wp == WTS_SESSION_LOCK || wp == WTS_CONSOLE_DISCONNECT || wp == WTS_REMOTE_DISCONNECT) {
             policy.invalidate(generation.fetch_add(1) + 1);
             reconcile();
         } else {
+            scheme_changed();
             PostThreadMessageW(input_thread_id.load(), WM_APP + 100, 0, 0);
             invalidate_focus();
         }
@@ -1226,6 +1257,7 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT m, WPARAM wp, LPARAM lp) {
             policy.invalidate(generation.fetch_add(1) + 1);
             reconcile();
         } else if (wp == PBT_APMRESUMEAUTOMATIC || wp == PBT_APMRESUMESUSPEND) {
+            scheme_changed();
             PostThreadMessageW(input_thread_id.load(), WM_APP + 100, 0, 0);
             if (shared)
                 InterlockedExchange64(&shared->heartbeat, now());
@@ -1249,7 +1281,8 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT m, WPARAM wp, LPARAM lp) {
 }
 static LONG WINAPI exception_filter(EXCEPTION_POINTERS *) {
     try {
-        restore_owned(true);
+        if (GetFileAttributesW(active_path.c_str()) != INVALID_FILE_ATTRIBUTES)
+            restore_owned(true);
     } catch (...) {
     }
     return EXCEPTION_EXECUTE_HANDLER;
@@ -1259,7 +1292,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     GetModuleFileNameW(nullptr, module, _countof(module));
     base = module;
     base.resize(base.find_last_of(L"\\/"));
-    resources = join(base, L"resources");
+    legacy_resources = join(base, L"resources");
     journal_path = join(base, L"state\\recovery.bin");
     settings_path = join(base, L"state\\settings.ini");
     active_path = join(base, L"state\\active.lock");
@@ -1312,6 +1345,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         mode == L"--integration-test" || mode == L"--crash-test" || mode == L"--stress-test";
     crash_test = mode == L"--crash-test";
     stress_test = mode == L"--stress-test";
+    backend_test = mode == L"--backend-test";
     transparency = GetPrivateProfileIntW(L"Settings", L"Transparency", 75, settings_path.c_str());
     if (transparency != 50 && transparency != 75 && transparency != 90 && transparency != 100)
         transparency = 75;
@@ -1320,12 +1354,16 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         transparency = test_transparency;
     policy.idle_ms =
         GetPrivateProfileIntW(L"Settings", L"IdleRestore", 1, settings_path.c_str()) ? 1500 : 0;
+    if (backend_test) {
+        policy.pause(true);
+        policy.idle_ms = 0;
+    }
     // A prior journal is recovered before a new baseline is saved. Recovery never
     // overwrites another theme's paths because only our resource paths are owned.
     if (GetFileAttributesW(active_path.c_str()) != INVALID_FILE_ATTRIBUTES) {
         if (!restore_owned(true)) {
-            MessageBoxW(nullptr, L"无法恢复上一次的指针状态。请先运行 恢复鼠标.cmd。",
-                        L"Hide", MB_OK | MB_ICONERROR);
+            MessageBoxW(nullptr, L"无法恢复上一次的指针状态。请先运行 恢复鼠标.cmd。", L"Hide",
+                        MB_OK | MB_ICONERROR);
             CloseHandle(mutex);
             return 3;
         }
@@ -1334,23 +1372,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     BOOL shadow = FALSE;
     SystemParametersInfoW(SPI_GETCURSORSHADOW, 0, &shadow, 0);
     shadow_was_on = shadow != FALSE;
-    try {
-        original = capture();
-        supported = verify_resources();
-    } catch (...) {
-        supported = false;
-    }
-    if (!supported) {
-        MessageBoxW(nullptr,
-                    L"本版仅支持已验证的 Ikaros 指针文件。请在鼠标属性中选择匹配的 Ikaros "
-                    L"后启动。没有修改当前皮肤。",
-                    L"Hide", MB_OK | MB_ICONINFORMATION);
-        CloseHandle(mutex);
-        return 4;
-    }
-    if (!write_journal(original) || !spawn_guard()) {
-        MessageBoxW(nullptr, L"无法准备指针恢复保护，程序已停止。", L"Hide",
-                    MB_OK | MB_ICONERROR);
+    if (!spawn_guard()) {
+        MessageBoxW(nullptr, L"无法准备指针恢复保护，程序已停止。", L"Hide", MB_OK | MB_ICONERROR);
         CloseHandle(mutex);
         return 5;
     }
@@ -1364,17 +1387,22 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
     RegisterClassW(&wc);
-    main_window =
-        CreateWindowExW(0, CLASS_NAME, integration ? L"Hide 自动输入验证" : L"Hide",
-                        integration ? WS_OVERLAPPEDWINDOW : 0, CW_USEDEFAULT, CW_USEDEFAULT, 560,
-                        220, nullptr, nullptr, instance, nullptr);
+    main_window = CreateWindowExW(0, CLASS_NAME, integration ? L"Hide 自动输入验证" : L"Hide",
+                                  integration ? WS_OVERLAPPEDWINDOW : 0, CW_USEDEFAULT,
+                                  CW_USEDEFAULT, 560, 220, nullptr, nullptr, instance, nullptr);
     if (!main_window) {
         SetEvent(guard_stop);
         CloseHandle(mutex);
         return 6;
     }
-    tray_icon = (HICON)LoadImageW(nullptr, join(base, L"Hide.ico").c_str(), IMAGE_ICON, 32,
-                                  32, LR_LOADFROMFILE);
+    if (!scheme_tracker.start(main_window, M_SCHEME, M_PREPARED, join(base, L"state\\cache-v2"))) {
+        policy.pause(true);
+        preparing_scheme = false;
+        scheme_error = "scheme monitor initialization failed";
+    } else
+        PostMessageW(main_window, M_SCHEME, 0, 0);
+    tray_icon = (HICON)LoadImageW(nullptr, join(base, L"Hide.ico").c_str(), IMAGE_ICON, 32, 32,
+                                  LR_LOADFROMFILE);
     update_tray();
     SetTimer(main_window, 1, 250, nullptr);
     RegisterHotKey(main_window, 1, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_F12);
@@ -1410,12 +1438,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         invalidate_focus();
     } else
         balloon(L"Hide 已启动", L"开始输入时淡化；移动、点击或滚动恢复。右键托盘图标可设置"
-                                        L"，Ctrl+Alt+F12 可立即恢复并暂停。");
+                                L"，Ctrl+Alt+F12 可立即恢复并暂停。");
     MSG msg{};
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
+    scheme_tracker.stop();
     stopping.store(1);
     SetEvent(stop_event);
     PostThreadMessageW(input_thread_id.load(), WM_QUIT, 0, 0);
@@ -1424,6 +1453,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     if (worker_thread)
         WaitForSingleObject(worker_thread, 1500);
     restore();
+    prepared_scheme.reset();
     if (guard_stop)
         SetEvent(guard_stop);
     if (guard_process)

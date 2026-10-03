@@ -1,0 +1,50 @@
+[
+  {
+    "transparency": 50,
+    "result": {
+      "passed": true,
+      "reason": "controlled first-character and mouse restoration",
+      "synthetic_input_to_fade_ms": 47.0,
+      "faded_cursor_alpha_max": 128,
+      "original_cursor_alpha_max": 255,
+      "fade_count": 1,
+      "restore_count": 1
+    }
+  },
+  {
+    "transparency": 75,
+    "result": {
+      "passed": true,
+      "reason": "controlled first-character and mouse restoration",
+      "synthetic_input_to_fade_ms": 47.0,
+      "faded_cursor_alpha_max": 64,
+      "original_cursor_alpha_max": 255,
+      "fade_count": 1,
+      "restore_count": 1
+    }
+  },
+  {
+    "transparency": 90,
+    "result": {
+      "passed": true,
+      "reason": "controlled first-character and mouse restoration",
+      "synthetic_input_to_fade_ms": 47.0,
+      "faded_cursor_alpha_max": 26,
+      "original_cursor_alpha_max": 255,
+      "fade_count": 1,
+      "restore_count": 1
+    }
+  },
+  {
+    "transparency": 100,
+    "result": {
+      "passed": true,
+      "reason": "controlled first-character and mouse restoration",
+      "synthetic_input_to_fade_ms": 47.0,
+      "faded_cursor_alpha_max": 0,
+      "original_cursor_alpha_max": 255,
+      "fade_count": 1,
+      "restore_count": 1
+    }
+  }
+]

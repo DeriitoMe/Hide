@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "resources_required": false,
+  "default_transparency": 75,
+  "duplicate_keeps_instance": true,
+  "exe_sha256": "AF0F477DF10984524CA914B4B7B5E2134BC16DEE7239344034049F2606BBA421",
+  "exe_bytes": 327680,
+  "archive_bytes": 197725
+}

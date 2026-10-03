@@ -1,5 +1,7 @@
 # 验证数据
 
-hide-* 是发布准备阶段的 Hide 命名构建实测。baseline-* 是同一功能核心的原构建皮肤／连续切换基线；文件分别记录透明度、热身、连续 30 次切换与恢复结果。resource-verification.json 核对原文件及四套透明资源。
+v1.0.0-beta.2：dynamic-file-scan.txt（223 文件）、dynamic-scheme-desktop.json（1,000 次循环）、dynamic-scheme-final.json（最终候选复核）、dynamic-input.json（首字符）、dynamic-resident.json（短时常驻）。
 
-这里不包含个人设置、恢复备份或输入文字。数值与覆盖范围详见 ../docs/VALIDATION.md。
+测试不保存按键值或输入文字。资源占用区分主程序／守护与观察助手。数小时观察完成前保持未验证状态，详见 [报告](../docs/VALIDATION.md)。
+
+其他 baseline／hide 数据属于 beta.1 的历史证据。

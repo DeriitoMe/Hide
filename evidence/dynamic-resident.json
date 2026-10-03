@@ -1,0 +1,118 @@
+{
+  "date": "2026-10-03",
+  "requested_seconds": 30,
+  "elapsed_seconds": 30.315,
+  "status": "complete",
+  "passed": true,
+  "samples": [
+    {
+      "elapsed_seconds": 0.005,
+      "cpu_seconds": 0.21875,
+      "private_bytes": 6463488.0,
+      "working_set_bytes": 32669696.0,
+      "handles": 468.0
+    },
+    {
+      "elapsed_seconds": 5.04,
+      "cpu_seconds": 0.21875,
+      "private_bytes": 6500352.0,
+      "working_set_bytes": 32751616.0,
+      "handles": 476.0
+    },
+    {
+      "elapsed_seconds": 10.053,
+      "cpu_seconds": 0.21875,
+      "private_bytes": 6500352.0,
+      "working_set_bytes": 32751616.0,
+      "handles": 476.0
+    },
+    {
+      "elapsed_seconds": 15.078,
+      "cpu_seconds": 0.234375,
+      "private_bytes": 6586368.0,
+      "working_set_bytes": 37314560.0,
+      "handles": 477.0
+    },
+    {
+      "elapsed_seconds": 20.102,
+      "cpu_seconds": 0.234375,
+      "private_bytes": 6586368.0,
+      "working_set_bytes": 37314560.0,
+      "handles": 477.0
+    },
+    {
+      "elapsed_seconds": 25.123,
+      "cpu_seconds": 0.25,
+      "private_bytes": 6586368.0,
+      "working_set_bytes": 37314560.0,
+      "handles": 477.0
+    },
+    {
+      "elapsed_seconds": 30.136,
+      "cpu_seconds": 0.25,
+      "private_bytes": 6492160.0,
+      "working_set_bytes": 37249024.0,
+      "handles": 476.0
+    }
+  ],
+  "input_counts_start": {
+    "pid": 14036,
+    "enabled": true,
+    "supported": true,
+    "faded": false,
+    "transparency": 75,
+    "keyboard_events": 0,
+    "text_events": 0,
+    "mouse_events": 0,
+    "focus_queries": 1,
+    "focus_failures": 0,
+    "focus_state": 1,
+    "fade_count": 0,
+    "restore_count": 0,
+    "last_fade_ms": 0.0,
+    "max_fade_ms": 0.0,
+    "working_set_bytes": 24285184,
+    "private_bytes": 4890624,
+    "guardian_working_set_bytes": 8351744,
+    "guardian_private_bytes": 1572864,
+    "handles": 357,
+    "gdi_handles": 19,
+    "user_handles": 46,
+    "preparing": false,
+    "scheme_version": 2,
+    "scheme_changes": 1,
+    "queue_ms": 0
+  },
+  "helper_included_in_resource_totals": false,
+  "input_counts_end": {
+    "pid": 14036,
+    "enabled": true,
+    "supported": true,
+    "faded": false,
+    "transparency": 75,
+    "keyboard_events": 0,
+    "text_events": 0,
+    "mouse_events": 46,
+    "focus_queries": 1,
+    "focus_failures": 0,
+    "focus_state": 1,
+    "fade_count": 0,
+    "restore_count": 0,
+    "last_fade_ms": 0.0,
+    "max_fade_ms": 0.0,
+    "working_set_bytes": 28946432,
+    "private_bytes": 5013504,
+    "guardian_working_set_bytes": 8302592,
+    "guardian_private_bytes": 1478656,
+    "handles": 365,
+    "gdi_handles": 19,
+    "user_handles": 48,
+    "preparing": false,
+    "scheme_version": 2,
+    "scheme_changes": 1,
+    "queue_ms": 0
+  },
+  "cpu_single_core_percent": 0.1037,
+  "keyboard_events_delta": 0,
+  "mouse_events_delta": 46
+}

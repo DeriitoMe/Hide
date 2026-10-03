@@ -7,7 +7,7 @@ import zipfile
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument('--version', default='v1.0.0-beta.1')
+parser.add_argument('--version', default='v1.0.0-beta.2')
 args = parser.parse_args()
 release = root / 'release'
 release.mkdir(exist_ok=True)
@@ -18,7 +18,7 @@ selected = [root / name for name in required]
 for path in selected:
     if not path.is_file():
         raise FileNotFoundError(path)
-for folder in ['resources', 'docs', 'evidence']:
+for folder in ['docs']:
     selected.extend(p for p in (root / folder).rglob('*') if p.is_file())
 with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as z:
     for path in sorted(selected):
@@ -31,8 +31,7 @@ with zipfile.ZipFile(archive) as z:
     assert z.read('Hide/Hide.exe') == (root / 'Hide.exe').read_bytes()
     assert z.read('Hide/Start-Hide.cmd').decode('ascii').find('Hide.exe') >= 0
     assert z.read('Hide/Recover-Cursor.cmd').decode('ascii').find('--recover') >= 0
-    for folder in ['original', 'fade50', 'fade75', 'fade90', 'hidden']:
-        assert sum(n.startswith('Hide/resources/' + folder + '/') for n in names) == 17
+    assert not any(n.startswith('Hide/resources/') or n.startswith('Hide/evidence/') for n in names)
 sha = hashlib.sha256(archive.read_bytes()).hexdigest()
 (release / 'SHA256SUMS.txt').write_text(sha + '  ' + archive.name + '\n', encoding='ascii')
 summary = {'version': args.version, 'asset': archive.name, 'bytes': archive.stat().st_size,

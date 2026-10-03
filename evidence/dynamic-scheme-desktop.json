@@ -1,0 +1,118 @@
+{
+  "date": "2026-10-03",
+  "passed": true,
+  "checks": [
+    {
+      "case": "Ikaros",
+      "passed": true,
+      "fade_ms": 41.266
+    },
+    {
+      "case": "Default",
+      "passed": true,
+      "fade_ms": 59.483
+    },
+    {
+      "case": "System default empty paths",
+      "passed": true,
+      "fade_ms": 9.97
+    },
+    {
+      "case": "switch while faded, then fade/restore new scheme",
+      "passed": true
+    },
+    {
+      "case": "102 rapid scheme changes, latest wins",
+      "passed": true
+    },
+    {
+      "case": "mixed skin, only IBeam changed",
+      "passed": true
+    },
+    {
+      "case": "same filename source replaced",
+      "passed": true
+    },
+    {
+      "case": "malformed source preserves configuration and rejects fading",
+      "passed": true
+    },
+    {
+      "case": "1000 live fade/restore cycles, no persistent handle growth",
+      "passed": true
+    },
+    {
+      "case": "forced termination after selecting new scheme, guardian preserves new choice",
+      "passed": true
+    },
+    {
+      "case": "restart keeps latest scheme",
+      "passed": true
+    },
+    {
+      "case": "exit while faded keeps newly selected scheme",
+      "passed": true
+    }
+  ],
+  "input_injected": false,
+  "stress": {
+    "cycles": 1000,
+    "before": {
+      "pid": 28824,
+      "enabled": false,
+      "supported": true,
+      "faded": false,
+      "transparency": 75,
+      "keyboard_events": 0,
+      "text_events": 0,
+      "mouse_events": 117,
+      "focus_queries": 3,
+      "focus_failures": 0,
+      "focus_state": 1,
+      "fade_count": 10,
+      "restore_count": 10,
+      "last_fade_ms": 59.373,
+      "max_fade_ms": 59.823,
+      "working_set_bytes": 29200384,
+      "private_bytes": 5283840,
+      "guardian_working_set_bytes": 8339456,
+      "guardian_private_bytes": 1568768,
+      "handles": 366,
+      "gdi_handles": 7,
+      "user_handles": 44,
+      "preparing": false,
+      "scheme_version": 692,
+      "scheme_changes": 340,
+      "queue_ms": 0
+    },
+    "after": {
+      "pid": 28824,
+      "enabled": false,
+      "supported": true,
+      "faded": false,
+      "transparency": 75,
+      "keyboard_events": 18,
+      "text_events": 8,
+      "mouse_events": 770,
+      "focus_queries": 9,
+      "focus_failures": 0,
+      "focus_state": 1,
+      "fade_count": 1010,
+      "restore_count": 1010,
+      "last_fade_ms": 65.563,
+      "max_fade_ms": 92.604,
+      "working_set_bytes": 29155328,
+      "private_bytes": 5181440,
+      "guardian_working_set_bytes": 8286208,
+      "guardian_private_bytes": 1474560,
+      "handles": 359,
+      "gdi_handles": 7,
+      "user_handles": 43,
+      "preparing": false,
+      "scheme_version": 692,
+      "scheme_changes": 340,
+      "queue_ms": 47
+    },
+    "sampled_fade_p95_ms": 61.825
+  }
+}

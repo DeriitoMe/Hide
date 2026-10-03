@@ -1,55 +1,62 @@
 # 构建与测试
 
-## 编译现有源码
+## 编译
 
-安装 Visual Studio 的“使用 C++ 的桌面开发”工作负载和 Windows SDK。在项目目录运行 PowerShell：
+安装 Visual Studio C++ 桌面构建工具和 Windows SDK，在项目目录执行：
 
-```powershell
+~~~powershell
 .\build.ps1
-```
+~~~
 
-脚本使用 MSVC C++17、/O2、/MT、/W4、/guard:cf，编译资源与 manifest、主程序和状态测试，并自动运行状态测试。生成 Hide.exe。运行包必须保留 resources/ 和 Hide.ico。
+脚本使用 MSVC C++17、/O2、/MT、/W4、/guard:cf，编译 Hide.exe、输入状态测试和原生光标测试并执行它们。-NoInstall 只生成 build/ 中的程序，便于已运行实例的开发。运行时光标转换使用 C++ 和 Windows 系统图像解码器。
 
-GitHub Actions 的 Windows 工作流运行同一构建和状态测试，并检查光标资源与便携包完整性。它不在非交互会话中伪装执行桌面端到端测试。
+## 原生测试
 
-## 光标资源校验
+~~~powershell
+.\build\cursor_tests.exe
+.\build\cursor_tests.exe --scan
+~~~
 
-资源转换工具使用 Python 和 Pillow；编译现有资源不需要它们。资源验证只依赖 Python 标准库：
+默认测试使用合成素材验证格式、偏移／分配边界、10,000 次变异、ANI 元数据、PNG、黑白反色及实际背景混合。--scan 扫描本机 C:\Windows\Cursors，不修改原文件。
 
-```powershell
-python tools/verify_resources.py
-python tools/verify_resources.py --source C:\Windows\Cursors\Ikaros
-```
+以下测试需要交互桌面并会短暂切换系统指针；先退出 Hide：
 
-第一个命令核对随附原文件、四套透明版本的 alpha、ANI 帧序／速度／热点及 XOR 情况。第二个命令额外比对本机安装的源文件，确认它们没有被修改。重新转换指定皮肤时使用 build.ps1 -PrepareAssets（默认源目录为 C:\Windows\Cursors\Ikaros）。这不扩展产品对任意皮肤的支持范围。
+~~~powershell
+.\build\cursor_tests.exe --desktop
+python tests/desktop_validation.py
+~~~
 
-## 桌面端到端测试
+--desktop 验证 17 个系统角色的指定动画帧及顺序，结束后重载正常方案。desktop_validation.py 验证三套方案、混合角色、文件替换、损坏来源、102 次快速切换、1,000 次淡化恢复、崩溃与重启；finally 恢复测试前的注册表值。它不注入文字。后者使用本机的 Default 保存方案和已安装的 Ikaros 样本。
 
-先退出已运行的 Hide。测试需要当前桌面选中匹配的 Ikaros 方案，会短暂显示自己的输入窗口并移动鼠标。关闭或切换前台窗口可能中止测试。输入测试只在自己的窗口与输入框保持焦点时发送字符；不会向其他程序输入。
+## 输入与恢复测试
 
-```powershell
-.\Hide.exe --integration-test
+先退出 Hide。以下测试显示专用 EDIT 窗口，只在它拥有输入焦点时发送字符：
+
+~~~powershell
+.\Hide.exe --integration-test 75
 .\Hide.exe --integration-test 50
 .\Hide.exe --integration-test 90
 .\Hide.exe --integration-test 100
 .\Hide.exe --stress-test
 .\Hide.exe --crash-test
-```
+~~~
 
-- integration-test：真实首字符、实际系统指针 alpha 和鼠标恢复。
-- stress-test：连续 30 次受控字符输入／鼠标恢复。
-- crash-test：独立激活真实系统指针淡化，核对 alpha 后终止自己的主进程（退出码 99），验证守护恢复；此模式不发送按键。
+alpha_max 集成判据用于普通 alpha 皮肤。反色皮肤应使用背景混合测试，不能用同一个 alpha_max 数值解释其透明效果。
 
-结果写在 state/。每次集成测试后检查 integration-result.json 的 passed，不只看进程退出码。焦点诊断仅测试模式写 integration-focus.json，内容是控件元数据和状态，不包含文字。
+结果在 state/，检查 integration-result.json 的 passed。--crash-test 直接淡化并终止自己的主程序，不发送按键。--backend-test 是非输入诊断模式；仅在该模式接受内部测试淡化／恢复消息。
 
-## 状态与恢复命令
+## 状态与常驻测量
 
-Hide.exe --status 将实时计数和资源指标写到 state/status.json。--pause 暂停并恢复，--exit 正常退出，--recover 先暂停当前实例再重新装载正常方案。桌面 UI 程序从 PowerShell 启动可能异步返回，脚本测量时请等待辅助进程退出再读取状态文件。
+--status 写 state/status.json；--pause、--exit 和 --recover 分别暂停、退出及恢复。状态包含计数和资源指标，不包含按键值或文字。
 
-## 生成发布包
+Python 桌面／测量脚本只用于开发验证。数小时观测应注明实际起止、负载、私有内存、工作集、CPU 和句柄，记录未完成与提前结束。
 
-```powershell
-python tools/package_release.py
-```
+## 发布包
 
-生成 release/Hide-windows-x64.zip、SHA256SUMS.txt 和 package-verification.json。ZIP 使用明确的文件列表，不打包 state/、.git/、源码编译中间文件或旧发布包。
+~~~powershell
+python tools/package_release.py --version v1.0.0-beta.2
+~~~
+
+生成 release/Hide-windows-x64.zip、SHA256SUMS.txt 和校验 JSON。明确列表打包，排除个人 state/、测试素材、证据和开发工具。历史 tools/verify_resources.py 与 resources/ 保留用于首版资源复核，不参与新版运行和打包。
+
+新恢复标记对应内存替换：守护使用当前 Windows 配置，不保存永久绑定的角色路径。升级兼容仅在发现旧版零字节活动标记时使用旧恢复日志，正常状态不回写旧备份。
