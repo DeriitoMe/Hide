@@ -93,6 +93,131 @@ Snapshot snapshot() {
     }
     return s;
 }
+static SIZE cursor_size(HCURSOR cursor) {
+    ICONINFO info{};
+    if (!cursor || !GetIconInfo(cursor, &info))
+        throw std::runtime_error("cannot inspect displayed cursor");
+    BITMAP bitmap{};
+    bool ok = GetObjectW(info.hbmColor ? info.hbmColor : info.hbmMask, sizeof(bitmap), &bitmap) != 0;
+    SIZE size{bitmap.bmWidth, info.hbmColor ? bitmap.bmHeight : bitmap.bmHeight / 2};
+    if (info.hbmColor)
+        DeleteObject(info.hbmColor);
+    DeleteObject(info.hbmMask);
+    if (!ok || size.cx <= 0 || size.cy <= 0 || size.cx > 256 || size.cy > 256)
+        throw std::runtime_error("displayed cursor dimensions unavailable");
+    return size;
+}
+std::vector<uint64_t> cursor_appearance(HCURSOR cursor) {
+    SIZE size = cursor_size(cursor);
+    ICONINFO info{};
+    if (!GetIconInfo(cursor, &info))
+        throw std::runtime_error("cannot inspect cursor hotspot");
+    std::vector<uint64_t> signature{uint64_t(size.cx), uint64_t(size.cy), info.xHotspot,
+                                    info.yHotspot};
+    if (info.hbmColor)
+        DeleteObject(info.hbmColor);
+    DeleteObject(info.hbmMask);
+    BITMAPINFO bi{};
+    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bi.bmiHeader.biWidth = size.cx;
+    bi.bmiHeader.biHeight = -size.cy;
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    void *pixels = nullptr;
+    HBITMAP bitmap = CreateDIBSection(nullptr, &bi, DIB_RGB_COLORS, &pixels, nullptr, 0);
+    HDC dc = CreateCompatibleDC(nullptr);
+    if (!bitmap || !dc || !pixels) {
+        if (bitmap)
+            DeleteObject(bitmap);
+        if (dc)
+            DeleteDC(dc);
+        throw std::runtime_error("cursor appearance buffer unavailable");
+    }
+    HGDIOBJ old = SelectObject(dc, bitmap);
+    bool ok = old && old != HGDI_ERROR;
+    size_t count = size_t(size.cx) * size.cy * 4;
+    for (BYTE background : {BYTE(0), BYTE(255)})
+        for (unsigned step = 0; step < 3 && ok; ++step) {
+            memset(pixels, background, count);
+            ok = DrawIconEx(dc, 0, 0, cursor, size.cx, size.cy, step, nullptr, DI_NORMAL) != FALSE;
+            GdiFlush();
+            uint64_t hash = 14695981039346656037ull;
+            auto bytes = static_cast<const BYTE *>(pixels);
+            for (size_t i = 0; i < count && ok; ++i)
+                if (i % 4 != 3)
+                    hash = (hash ^ bytes[i]) * 1099511628211ull;
+            signature.push_back(hash);
+        }
+    if (old && old != HGDI_ERROR)
+        SelectObject(dc, old);
+    DeleteDC(dc);
+    DeleteObject(bitmap);
+    if (!ok)
+        throw std::runtime_error("cursor appearance unavailable");
+    return signature;
+}
+bool live_cursors_match(const Prepared &prepared) {
+    if (prepared.original_appearances.size() != _countof(roles))
+        return false;
+    try {
+        for (size_t i = 0; i < _countof(roles); ++i)
+            if (cursor_appearance(LoadCursorW(nullptr, MAKEINTRESOURCEW(ids[i]))) !=
+                prepared.original_appearances[i])
+                return false;
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+bool restore_current_cursors() {
+    // Reload stock/empty-path roles, then explicitly restore every configured custom role.
+    // In particular, a successful SPI_SETCURSORS call may leave a custom Person role stale.
+    for (unsigned attempt = 0; attempt < 3; ++attempt) {
+        if (!SystemParametersInfoW(SPI_SETCURSORS, 0, nullptr, 0))
+            return false;
+        std::vector<HCURSOR> loaded(_countof(roles), nullptr);
+        auto cleanup = [&]() {
+            for (auto cursor : loaded)
+                if (cursor)
+                    DestroyCursor(cursor);
+        };
+        try {
+            Snapshot source = snapshot();
+            for (size_t i = 0; i < _countof(roles); ++i) {
+                if (source.sources[i].empty())
+                    continue;
+                SIZE size = cursor_size(LoadCursorW(nullptr, MAKEINTRESOURCEW(ids[i])));
+                loaded[i] = HCURSOR(LoadImageW(nullptr, source.sources[i].c_str(), IMAGE_CURSOR,
+                                              size.cx, size.cy, LR_LOADFROMFILE));
+                if (!loaded[i])
+                    throw std::runtime_error("current cursor source cannot be restored");
+            }
+            if (!(snapshot() == source)) {
+                cleanup();
+                continue;
+            }
+            bool ok = true;
+            for (size_t i = 0; i < loaded.size(); ++i) {
+                if (!loaded[i])
+                    continue;
+                if (!SetSystemCursor(loaded[i], ids[i])) {
+                    ok = false;
+                    break;
+                }
+                loaded[i] = nullptr; // Windows consumed the owned handle, preserving full ANI.
+            }
+            cleanup();
+            if (!ok)
+                return false;
+            if (snapshot() == source)
+                return true;
+        } catch (...) {
+            cleanup();
+            return false;
+        }
+    }
+    return false;
+}
 Prepared::~Prepared() {
     for (auto c : cursors)
         if (c)
@@ -280,6 +405,22 @@ void SchemeTracker::loop() {
                 }
                 if (width > 256 || height > 256)
                     throw std::runtime_error("displayed cursor exceeds 256-pixel limit");
+                HCURSOR original = source.sources[i].empty()
+                                       ? LoadCursorW(nullptr, MAKEINTRESOURCEW(ids[i]))
+                                       : HCURSOR(LoadImageW(nullptr, source.sources[i].c_str(),
+                                                            IMAGE_CURSOR, int(width), int(height),
+                                                            LR_LOADFROMFILE));
+                if (!original)
+                    throw std::runtime_error("current cursor source unavailable");
+                try {
+                    prepared->original_appearances.push_back(cursor_appearance(original));
+                } catch (...) {
+                    if (!source.sources[i].empty())
+                        DestroyCursor(original);
+                    throw;
+                }
+                if (!source.sources[i].empty())
+                    DestroyCursor(original);
                 HCURSOR c = HCURSOR(LoadImageW(nullptr, file.c_str(), IMAGE_CURSOR, int(width),
                                                int(height), LR_LOADFROMFILE));
                 if (!c)
@@ -298,6 +439,8 @@ void SchemeTracker::loop() {
             }
             if (!(snapshot() == source))
                 throw std::runtime_error("cursor scheme changed during preparation");
+            if (!live_cursors_match(*prepared))
+                throw std::runtime_error("displayed cursor differs from configured skin; reapply your skin in Windows");
         } catch (const std::exception &e) {
             prepared->error = e.what();
         }

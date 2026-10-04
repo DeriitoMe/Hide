@@ -1,10 +1,10 @@
 # 下载与使用 Hide
 
-当前版本：v1.0.0-beta.2，Windows 10／11 x64。
+当前版本：v1.0.0-beta.3，Windows 10／11 x64。
 
 ## 直接下载
 
-1. 在浏览器点击 [下载 Hide-windows-x64.zip](https://github.com/DeriitoMe/Hide/releases/download/v1.0.0-beta.2/Hide-windows-x64.zip)。
+1. 在浏览器点击 [下载 Hide-windows-x64.zip](https://github.com/DeriitoMe/Hide/releases/download/v1.0.0-beta.3/Hide-windows-x64.zip)。
 2. 右键压缩包 → **全部解压**，选择普通可写目录，例如 D:\Apps。
 3. 打开 Hide 文件夹，双击 **Hide.exe**，或 **Start-Hide.cmd／启动.cmd**。
 4. 在 Windows 托盘找到 Hide，必要时展开隐藏图标。
@@ -14,7 +14,7 @@
 
 ## 从 GitHub 页面下载
 
-打开 [发布页](https://github.com/DeriitoMe/Hide/releases/tag/v1.0.0-beta.2)，展开 **Assets**，选择 **Hide-windows-x64.zip**。
+打开 [发布页](https://github.com/DeriitoMe/Hide/releases/tag/v1.0.0-beta.3)，展开 **Assets**，选择 **Hide-windows-x64.zip**。
 
 **Source code (zip)** 和 **Source code (tar.gz)** 是开发者源码；便携可执行文件在上述 Hide-windows-x64.zip 中。
 
@@ -25,6 +25,14 @@
 只更换文本选择等部分角色或使用混合方案，也会重新识别。必要时右键托盘 → **重新识别当前皮肤**。
 
 托盘菜单可选 50%、75%、90% 透明或完全隐藏、启用／暂停、空闲恢复和开机启动。开机启动默认关闭。对焦点识别不完整的软件，将其置于前台，再选 **当前应用：使用键盘检测**；**当前应用：自动识别**可清除例外。
+
+### 开机启动
+
+右键 Hide 托盘图标 → 勾选 **随 Windows 启动**。以后登录当前 Windows 用户时自动启动；取消勾选即可关闭。不要在勾选后移动程序文件夹；移动后，在新位置重新启用即可更新启动路径。也可在 Hide 文件夹运行 Hide.exe --enable-startup／--disable-startup。
+
+### 指针外观与配置不一致
+
+如果实际显示的皮肤与配置路径不一致，Hide 会暂停淡化并保留当前可见皮肤，避免输入时换成另一套。请在 Windows 鼠标属性中重新选择希望使用的方案、点击应用，再使用 **重新识别当前皮肤**。Hide 不会替你选择其他命名方案。
 
 ## 恢复、升级与卸载
 

@@ -51,10 +51,16 @@ alpha_max 集成判据用于普通 alpha 皮肤。反色皮肤应使用背景混
 
 Python 桌面／测量脚本只用于开发验证。数小时观测应注明实际起止、负载、私有内存、工作集、CPU 和句柄，记录未完成与提前结束。
 
+## 显示皮肤保护回归
+
+先退出 Hide，运行 python tests/skin_safety_validation.py --cycles 100。它不写角色路径或方案名称，也不注入文字；核对当前 17 种角色的实际图像、前三个动画采样帧与热点。短暂覆盖内存中的箭头角色用于验证外观不一致时拒绝淡化，finally 恢复当前配置。另核对连续恢复、守护、重启与退出。句柄以连续采样及后半程趋势核对，区分异步 UI Automation 初始化与持续增长。
+
+--enable-startup／--disable-startup 幂等设置当前用户启动项；--status 的 startup 字段核对是否指向当前可执行文件。
+
 ## 发布包
 
 ~~~powershell
-python tools/package_release.py --version v1.0.0-beta.2
+python tools/package_release.py --version v1.0.0-beta.3
 ~~~
 
 生成 release/Hide-windows-x64.zip、SHA256SUMS.txt 和校验 JSON。明确列表打包，排除个人 state/、测试素材、证据和开发工具。历史 tools/verify_resources.py 与 resources/ 保留用于首版资源复核，不参与新版运行和打包。

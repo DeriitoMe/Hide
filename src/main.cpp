@@ -201,7 +201,7 @@ static bool restore_owned(bool restore_shadow) {
         CloseHandle(marker);
     }
     if (!legacy_marker || (got == sizeof(magic) && magic == 0x32444948))
-        return SystemParametersInfoW(SPI_SETCURSORS, 0, nullptr, 0) != FALSE;
+        return hide_cursor::restore_current_cursors();
     std::vector<Record> rs;
     bool sh = false;
     bool have = read_journal(rs, sh);
@@ -230,7 +230,7 @@ static bool restore_owned(bool restore_shadow) {
         ok = false;
     // Registry paths usually already contain the original scheme. Reloading also
     // restores the live cursor when the process died after a completed transition.
-    if (!SystemParametersInfoW(SPI_SETCURSORS, 0, nullptr, 0))
+    if (!hide_cursor::restore_current_cursors())
         ok = false;
     if (restore_shadow && have && sh &&
         !SystemParametersInfoW(SPI_SETCURSORSHADOW, 0, (PVOID)TRUE, 0))
@@ -267,6 +267,12 @@ static bool fade() {
     };
     if (!matches()) {
         PostMessageW(main_window, M_SCHEME, 0, 0);
+        return false;
+    }
+    if (!hide_cursor::live_cursors_match(*prepared_scheme)) {
+        supported = false;
+        log_error("displayed cursor differs from configured skin; fading paused");
+        PostMessageW(main_window, M_SCHEME, 1, 0);
         return false;
     }
     HANDLE marker = CreateFileW(active_path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr,
@@ -647,25 +653,37 @@ static bool startup_enabled() {
     if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0,
                       KEY_QUERY_VALUE, &k) != ERROR_SUCCESS)
         return false;
-    DWORD n = 0;
-    bool ok = RegQueryValueExW(k, L"Hide", nullptr, nullptr, nullptr, &n) == ERROR_SUCCESS;
+    wchar_t value[32768]{}, module[32768]{};
+    DWORD n = sizeof(value), type = 0;
+    bool ok = RegQueryValueExW(k, L"Hide", nullptr, &type, (BYTE *)value, &n) == ERROR_SUCCESS &&
+              type == REG_SZ && n >= sizeof(wchar_t) && n % sizeof(wchar_t) == 0 &&
+              value[n / sizeof(wchar_t) - 1] == L'\0' &&
+              GetModuleFileNameW(nullptr, module, _countof(module)) > 0;
     RegCloseKey(k);
-    return ok;
+    return ok && lower(value) == lower(L"\"" + std::wstring(module) + L"\"");
 }
-static void toggle_startup() {
+static bool set_startup(bool enable) {
     HKEY k = nullptr;
     if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0,
                         nullptr, 0, KEY_QUERY_VALUE | KEY_SET_VALUE, nullptr, &k,
                         nullptr) != ERROR_SUCCESS)
-        return;
-    if (startup_enabled())
-        RegDeleteValueW(k, L"Hide");
+        return false;
+    LONG error = ERROR_SUCCESS;
+    if (!enable)
+        error = RegDeleteValueW(k, L"Hide");
     else {
-        auto command = L"\"" + join(base, L"Hide.exe") + L"\"";
-        RegSetValueExW(k, L"Hide", 0, REG_SZ, (const BYTE *)command.c_str(),
-                       (DWORD)((command.size() + 1) * 2));
+        wchar_t module[32768]{};
+        DWORD n = GetModuleFileNameW(nullptr, module, _countof(module));
+        if (!n || n >= _countof(module)) {
+            RegCloseKey(k);
+            return false;
+        }
+        auto command = L"\"" + std::wstring(module) + L"\"";
+        error = RegSetValueExW(k, L"Hide", 0, REG_SZ, (const BYTE *)command.c_str(),
+                              (DWORD)((command.size() + 1) * sizeof(wchar_t)));
     }
     RegCloseKey(k);
+    return error == ERROR_SUCCESS || (!enable && error == ERROR_FILE_NOT_FOUND);
 }
 static void balloon(const wchar_t *title, const wchar_t *message) {
     NOTIFYICONDATAW n{};
@@ -775,7 +793,7 @@ static void status(const wchar_t *filename = L"status.json") {
             "%llu,\"last_fade_ms\":%.3f,\"max_fade_ms\":%.3f,\"working_set_bytes\":%llu,\"private_"
             "bytes\":%llu,\"guardian_working_set_bytes\":%llu,\"guardian_private_bytes\":%llu,"
             "\"handles\":%lu,\"gdi_handles\":%lu,\"user_handles\":%lu,\"preparing\":%s,"
-            "\"scheme_version\":%llu,\"scheme_changes\":%llu,\"queue_ms\":%llu}\n",
+            "\"scheme_version\":%llu,\"scheme_changes\":%llu,\"queue_ms\":%llu,\"startup\":%s}\n",
             GetCurrentProcessId(), policy.enabled ? "true" : "false", supported ? "true" : "false",
             applied ? "true" : "false", transparency, keys_seen.load(), text_seen.load(),
             mouse_seen.load(), focus_queries.load(), focus_failures.load(), (int)policy.focus,
@@ -785,7 +803,7 @@ static void status(const wchar_t *filename = L"status.json") {
             GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS),
             GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS),
             preparing_scheme ? "true" : "false", scheme_tracker.version(), scheme_changes,
-            last_queue_ms);
+            last_queue_ms, startup_enabled() ? "true" : "false");
     fclose(f);
 }
 static bool spawn_guard() {
@@ -949,7 +967,7 @@ static void scheme_ready() {
     if (!supported) {
         log_error(scheme_error.c_str());
         balloon(L"当前皮肤的淡化暂不可用",
-                L"已保留当前鼠标外观。可尝试完全隐藏，或更换方案后重新识别。");
+                L"已保留当前鼠标外观。请在 Windows 鼠标属性中重新应用你想使用的皮肤，再重新识别。");
     }
 }
 static int cursor_alpha_max() {
@@ -1208,8 +1226,10 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT m, WPARAM wp, LPARAM lp) {
             policy.pause(true);
         else if (cmd == C_IDLE)
             policy.idle_ms = policy.idle_ms ? 0 : 1500;
-        else if (cmd == C_STARTUP)
-            toggle_startup();
+        else if (cmd == C_STARTUP) {
+            if (!set_startup(!startup_enabled()))
+                balloon(L"开机启动设置失败", L"无法保存当前用户的启动项，请稍后重试。");
+        }
         else if (cmd == C_50 || cmd == C_75 || cmd == C_90 || cmd == C_HIDE) {
             policy.faded = policy.pending = false;
             restore();
@@ -1308,6 +1328,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     }
     int test_transparency = argc > 2 ? _wtoi(args[2]) : 75;
     LocalFree(args);
+    if (mode == L"--enable-startup" || mode == L"--disable-startup")
+        return set_startup(mode == L"--enable-startup") ? 0 : 1;
     if (mode == L"--recover") {
         bool recovering_active = GetFileAttributesW(active_path.c_str()) != INVALID_FILE_ATTRIBUTES;
         auto w = FindWindowW(CLASS_NAME, nullptr);

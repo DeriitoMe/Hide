@@ -146,6 +146,7 @@ finally:
         try:send(0x10);process.wait(timeout=5)
         except Exception:process.kill();process.wait(timeout=5);time.sleep(1.5)
     install(initial)
+    subprocess.run([str(EXE),'--recover'],cwd=ROOT,check=True,timeout=10,creationflags=subprocess.CREATE_NO_WINDOW)
     check_values(initial)
     source_copy.unlink(missing_ok=True)
     (ROOT/args.output).write_text(json.dumps(results,indent=2),encoding='utf-8')

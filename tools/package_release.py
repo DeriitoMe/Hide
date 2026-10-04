@@ -7,7 +7,7 @@ import zipfile
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument('--version', default='v1.0.0-beta.2')
+parser.add_argument('--version', default='v1.0.0-beta.3')
 args = parser.parse_args()
 release = root / 'release'
 release.mkdir(exist_ok=True)

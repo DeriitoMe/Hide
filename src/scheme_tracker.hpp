@@ -30,6 +30,10 @@ struct Snapshot {
     }
 };
 Snapshot snapshot();
+// Restore the latest role paths, including roles SPI_SETCURSORS may leave unchanged.
+// This never writes cursor preferences or selects a named saved scheme.
+bool restore_current_cursors();
+std::vector<uint64_t> cursor_appearance(HCURSOR cursor);
 struct Prepared {
     uint64_t version = 0;
     unsigned transparency = 0;
@@ -37,11 +41,13 @@ struct Prepared {
     std::vector<HCURSOR> cursors;
     std::vector<SIZE> sizes;
     std::vector<std::wstring> files;
+    std::vector<std::vector<uint64_t>> original_appearances;
     std::wstring directory;
     std::string error;
     ~Prepared();
     bool valid() const { return error.empty() && cursors.size() == _countof(roles); }
 };
+bool live_cursors_match(const Prepared &prepared);
 class SchemeTracker {
     HANDLE stop_ = nullptr, request_ = nullptr, thread_ = nullptr;
     HWND window_ = nullptr;

@@ -1,0 +1,127 @@
+{
+  "date": "2026-10-05",
+  "passed": true,
+  "cycles": 100,
+  "checks": [
+    "recovery preserves all 17 displayed roles, sampled animation frames and hotspots",
+    "every fade/restore keeps registry and actual displayed skin identical",
+    "unannounced live skin mismatch rejects fading without replacing the visible pointer",
+    "guardian restores exact current skin after forced termination",
+    "restart and exit while faded preserve actual appearance"
+  ],
+  "preference_writes": false,
+  "input_injected": false,
+  "cycles_before": {
+    "pid": 6320,
+    "enabled": false,
+    "supported": true,
+    "faded": false,
+    "transparency": 75,
+    "keyboard_events": 0,
+    "text_events": 0,
+    "mouse_events": 0,
+    "focus_queries": 2,
+    "focus_failures": 0,
+    "focus_state": 2,
+    "fade_count": 15,
+    "restore_count": 15,
+    "last_fade_ms": 45.906,
+    "max_fade_ms": 50.283,
+    "working_set_bytes": 30003200,
+    "private_bytes": 5095424,
+    "guardian_working_set_bytes": 8970240,
+    "guardian_private_bytes": 1572864,
+    "handles": 369,
+    "gdi_handles": 19,
+    "user_handles": 48,
+    "preparing": false,
+    "scheme_version": 2,
+    "scheme_changes": 1,
+    "queue_ms": 0,
+    "startup": true
+  },
+  "cycles_after": {
+    "pid": 6320,
+    "enabled": false,
+    "supported": true,
+    "faded": false,
+    "transparency": 75,
+    "keyboard_events": 0,
+    "text_events": 0,
+    "mouse_events": 0,
+    "focus_queries": 4,
+    "focus_failures": 0,
+    "focus_state": 2,
+    "fade_count": 115,
+    "restore_count": 115,
+    "last_fade_ms": 48.083,
+    "max_fade_ms": 73.725,
+    "working_set_bytes": 30109696,
+    "private_bytes": 5214208,
+    "guardian_working_set_bytes": 8970240,
+    "guardian_private_bytes": 1572864,
+    "handles": 374,
+    "gdi_handles": 19,
+    "user_handles": 49,
+    "preparing": false,
+    "scheme_version": 2,
+    "scheme_changes": 1,
+    "queue_ms": 0,
+    "startup": true
+  },
+  "handle_samples": [
+    {
+      "handles": 369,
+      "gdi_handles": 19,
+      "user_handles": 48
+    },
+    {
+      "handles": 369,
+      "gdi_handles": 19,
+      "user_handles": 48
+    },
+    {
+      "handles": 374,
+      "gdi_handles": 19,
+      "user_handles": 49
+    },
+    {
+      "handles": 374,
+      "gdi_handles": 19,
+      "user_handles": 49
+    },
+    {
+      "handles": 374,
+      "gdi_handles": 19,
+      "user_handles": 49
+    },
+    {
+      "handles": 374,
+      "gdi_handles": 19,
+      "user_handles": 49
+    },
+    {
+      "handles": 374,
+      "gdi_handles": 19,
+      "user_handles": 49
+    },
+    {
+      "handles": 374,
+      "gdi_handles": 19,
+      "user_handles": 49
+    },
+    {
+      "handles": 374,
+      "gdi_handles": 19,
+      "user_handles": 49
+    },
+    {
+      "handles": 374,
+      "gdi_handles": 19,
+      "user_handles": 49
+    }
+  ],
+  "fade_p95_ms": 70.047,
+  "final_settings_preserved": true,
+  "final_appearance_preserved": true
+}

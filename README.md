@@ -4,13 +4,13 @@
 
 Hide 是一款轻量级 Windows 鼠标工具。开始输入文字时自动淡化或隐藏指针，移动、点击或滚动鼠标时恢复。它自动跟随你当前的系统鼠标皮肤，支持静态指针和动画指针。
 
-[![Windows x64](https://img.shields.io/badge/Windows-x64-0078D4)](https://github.com/DeriitoMe/Hide/releases/tag/v1.0.0-beta.2) [![Beta](https://img.shields.io/badge/release-1.0.0--beta.2-orange)](https://github.com/DeriitoMe/Hide/releases/tag/v1.0.0-beta.2)
+[![Windows x64](https://img.shields.io/badge/Windows-x64-0078D4)](https://github.com/DeriitoMe/Hide/releases/tag/v1.0.0-beta.3) [![Beta](https://img.shields.io/badge/release-1.0.0--beta.3-orange)](https://github.com/DeriitoMe/Hide/releases/tag/v1.0.0-beta.3)
 
 ## 下载并使用
 
-### [⬇ 直接下载 Windows 便携包](https://github.com/DeriitoMe/Hide/releases/download/v1.0.0-beta.2/Hide-windows-x64.zip)
+### [⬇ 直接下载 Windows 便携包](https://github.com/DeriitoMe/Hide/releases/download/v1.0.0-beta.3/Hide-windows-x64.zip)
 
-[发布页与 SHA256 校验文件](https://github.com/DeriitoMe/Hide/releases/tag/v1.0.0-beta.2) · [详细下载教程](docs/DOWNLOAD.md) · [English guide](docs/DOWNLOAD.en.md)
+[发布页与 SHA256 校验文件](https://github.com/DeriitoMe/Hide/releases/tag/v1.0.0-beta.3) · [详细下载教程](docs/DOWNLOAD.md) · [English guide](docs/DOWNLOAD.en.md)
 
 1. 下载 **Hide-windows-x64.zip**，右键 ZIP → **全部解压**，放到普通可写目录。
 2. 打开 Hide 文件夹，双击 **Hide.exe**，或 **Start-Hide.cmd / 启动.cmd**。
@@ -24,6 +24,8 @@ Hide 是一款轻量级 Windows 鼠标工具。开始输入文字时自动淡化
 
 右键托盘可选择启用／暂停、50%／75%／90% 透明或完全隐藏、停止输入恢复、随 Windows 启动，以及当前应用的检测方式。开机启动默认关闭。
 
+**启用开机启动**：右键 Hide 托盘图标 → 勾选 **随 Windows 启动**。以后登录 Windows 时自动启动；取消勾选即可关闭。文件夹移动后，请在新位置重新启用。也可执行 Hide.exe --enable-startup／--disable-startup，无需管理员权限。
+
 - **自动跟随当前鼠标皮肤**：整套更换、部分角色更换、混合皮肤及原文件内容更新均会重新识别。
 - **重新识别当前皮肤**：用于手动刷新。
 - **当前应用：自动识别**：根据焦点控件类型与只读元数据判断可编辑区域，不读取输入框文字。
@@ -35,6 +37,8 @@ Hide 是一款轻量级 Windows 鼠标工具。开始输入文字时自动淡化
 ## 皮肤兼容性
 
 支持常见 Windows 系统 .cur／.ani，包含多尺寸图像、PNG 图像项、常见 DIB 和黑白反色像素。动画使用完整 ANI 来源，保留帧序、速度和热点。源文件保持原样，透明副本在本地 state/cache-v2/ 按需生成。
+
+淡化前会核对当前配置与实际显示的指针图像和热点；不一致时暂停淡化，保留屏幕上的皮肤。请在 Windows 鼠标属性重新应用希望使用的方案后重新识别。恢复时逐一加载最新角色文件，覆盖 Windows 重载接口可能遗漏的自定义角色；不自动选择任何命名方案。
 
 本机 223 个样本均通过转换及 Windows 加载检查；Ikaros、Default、系统默认空路径及混合方案另通过桌面切换／恢复测试。**这不代表所有皮肤、所有软件均已验证。**
 

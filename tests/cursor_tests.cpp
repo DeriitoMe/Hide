@@ -170,6 +170,7 @@ static void rendering_tests() {
                     fade = HCURSOR(LoadImageW(nullptr, fade_path.c_str(), IMAGE_CURSOR, 8, 8,
                                               LR_LOADFROMFILE));
             CHECK(original && fade);
+            CHECK(cursor_appearance(original) != cursor_appearance(fade));
             for (BYTE bg : {BYTE(0), BYTE(255), BYTE(73)}) {
                 Bytes a = render(original, 0, bg), b = render(fade, 0, bg);
                 for (size_t i = 0; i < a.size(); ++i)
@@ -244,13 +245,13 @@ static void desktop_tests() {
         for (unsigned step = 0; step < 3; ++step) {
             Bytes actual = render(live, step, 0), expected = render(c, step, 0);
             if (actual != expected) {
-                SystemParametersInfoW(SPI_SETCURSORS, 0, nullptr, 0);
+                restore_current_cursors();
             }
             CHECK(actual == expected);
         }
         CHECK(render(live, 0, 0) != render(live, 1, 0));
     }
-    CHECK(SystemParametersInfoW(SPI_SETCURSORS, 0, nullptr, 0));
+    CHECK(restore_current_cursors());
     DestroyCursor(c);
     DeleteFileW(path.c_str());
 }
