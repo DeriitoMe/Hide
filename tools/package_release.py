@@ -7,7 +7,7 @@ import zipfile
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument('--version', default='v1.0.0-beta.3')
+parser.add_argument('--version', default='v1.0.0')
 args = parser.parse_args()
 release = root / 'release'
 release.mkdir(exist_ok=True)
@@ -18,8 +18,11 @@ selected = [root / name for name in required]
 for path in selected:
     if not path.is_file():
         raise FileNotFoundError(path)
-for folder in ['docs']:
-    selected.extend(p for p in (root / folder).rglob('*') if p.is_file())
+for name in ['DOWNLOAD.md', 'DOWNLOAD.en.md', 'VALIDATION.md', 'BUILDING.md', 'RELEASING.md']:
+    path = root / 'docs' / name
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    selected.append(path)
 with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as z:
     for path in sorted(selected):
         z.write(path, 'Hide/' + path.relative_to(root).as_posix())

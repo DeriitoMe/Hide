@@ -4,13 +4,13 @@
 
 Hide 是一款轻量级 Windows 鼠标工具。开始输入文字时自动淡化或隐藏指针，移动、点击或滚动鼠标时恢复。它自动跟随你当前的系统鼠标皮肤，支持静态指针和动画指针。
 
-[![Windows x64](https://img.shields.io/badge/Windows-x64-0078D4)](https://github.com/DeriitoMe/Hide/releases/tag/v1.0.0-beta.3) [![Beta](https://img.shields.io/badge/release-1.0.0--beta.3-orange)](https://github.com/DeriitoMe/Hide/releases/tag/v1.0.0-beta.3)
+[![Windows x64](https://img.shields.io/badge/Windows-x64-0078D4)](https://github.com/DeriitoMe/Hide/releases/tag/v1.0.0) [![Release](https://img.shields.io/badge/release-1.0.0-blue)](https://github.com/DeriitoMe/Hide/releases/tag/v1.0.0)
 
 ## 下载并使用
 
-### [⬇ 直接下载 Windows 便携包](https://github.com/DeriitoMe/Hide/releases/download/v1.0.0-beta.3/Hide-windows-x64.zip)
+### [⬇ 直接下载 Windows 便携包](https://github.com/DeriitoMe/Hide/releases/download/v1.0.0/Hide-windows-x64.zip)
 
-[发布页与 SHA256 校验文件](https://github.com/DeriitoMe/Hide/releases/tag/v1.0.0-beta.3) · [详细下载教程](docs/DOWNLOAD.md) · [English guide](docs/DOWNLOAD.en.md)
+[发布页与 SHA256 校验文件](https://github.com/DeriitoMe/Hide/releases/tag/v1.0.0) · [详细下载教程](docs/DOWNLOAD.md) · [English guide](docs/DOWNLOAD.en.md)
 
 1. 下载 **Hide-windows-x64.zip**，右键 ZIP → **全部解压**，放到普通可写目录。
 2. 打开 Hide 文件夹，双击 **Hide.exe**，或 **Start-Hide.cmd / 启动.cmd**。
@@ -63,7 +63,7 @@ state/ 保存个人设置、临时缓存及恢复标记，常驻不记录输入�
 - 连续 1,000 次真实系统淡化／恢复，以及 102 次快速方案切换通过；未出现持续句柄增长。
 - 50%、75%、90% 与隐藏的受控首字符响应均为 47 ms；这些是本次样本。
 - 1,000 次恢复测试的 40 个淡化耗时样本，P95 约 62 ms；此指标是执行淡化的时间，区别于完整输入延迟。
-- 内存、CPU 的短时测量和长期验证范围见报告。数小时常驻、真实锁屏／休眠及跨应用测试仍需扩展，因此继续发布 **Beta**。
+- 内存、CPU 的短时测量和长期验证范围见报告。真实锁屏／休眠及跨应用测试仍需扩展。
 
 发现问题请提交 [Issue](https://github.com/DeriitoMe/Hide/issues)，附 Windows 版本、皮肤、相关应用及复现步骤。
 

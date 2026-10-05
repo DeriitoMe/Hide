@@ -1,10 +1,10 @@
 # 下载与使用 Hide
 
-当前版本：v1.0.0-beta.3，Windows 10／11 x64。
+当前版本：v1.0.0，Windows 10／11 x64。
 
 ## 直接下载
 
-1. 在浏览器点击 [下载 Hide-windows-x64.zip](https://github.com/DeriitoMe/Hide/releases/download/v1.0.0-beta.3/Hide-windows-x64.zip)。
+1. 在浏览器点击 [下载 Hide-windows-x64.zip](https://github.com/DeriitoMe/Hide/releases/download/v1.0.0/Hide-windows-x64.zip)。
 2. 右键压缩包 → **全部解压**，选择普通可写目录，例如 D:\Apps。
 3. 打开 Hide 文件夹，双击 **Hide.exe**，或 **Start-Hide.cmd／启动.cmd**。
 4. 在 Windows 托盘找到 Hide，必要时展开隐藏图标。
@@ -14,7 +14,7 @@
 
 ## 从 GitHub 页面下载
 
-打开 [发布页](https://github.com/DeriitoMe/Hide/releases/tag/v1.0.0-beta.3)，展开 **Assets**，选择 **Hide-windows-x64.zip**。
+打开 [发布页](https://github.com/DeriitoMe/Hide/releases/tag/v1.0.0)，展开 **Assets**，选择 **Hide-windows-x64.zip**。
 
 **Source code (zip)** 和 **Source code (tar.gz)** 是开发者源码；便携可执行文件在上述 Hide-windows-x64.zip 中。
 

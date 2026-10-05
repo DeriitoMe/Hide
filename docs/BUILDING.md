@@ -60,7 +60,7 @@ Python 桌面／测量脚本只用于开发验证。数小时观测应注明实�
 ## 发布包
 
 ~~~powershell
-python tools/package_release.py --version v1.0.0-beta.3
+python tools/package_release.py --version v1.0.0
 ~~~
 
 生成 release/Hide-windows-x64.zip、SHA256SUMS.txt 和校验 JSON。明确列表打包，排除个人 state/、测试素材、证据和开发工具。历史 tools/verify_resources.py 与 resources/ 保留用于首版资源复核，不参与新版运行和打包。

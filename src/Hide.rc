@@ -13,7 +13,7 @@ BEGIN
   BEGIN
    VALUE "FileDescription", "Hide"
    VALUE "ProductName", "Hide"
-   VALUE "FileVersion", "1.0.0-beta.3"
+   VALUE "FileVersion", "1.0.0"
   END
  END
  BLOCK "VarFileInfo"

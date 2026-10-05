@@ -2,7 +2,7 @@
 
 Hide runs on Windows 10/11 x64 without Codex, a GitHub client, Python, .NET, or a mouse driver.
 
-1. [Download Hide-windows-x64.zip](https://github.com/DeriitoMe/Hide/releases/download/v1.0.0-beta.3/Hide-windows-x64.zip), or open the [release page](https://github.com/DeriitoMe/Hide/releases/tag/v1.0.0-beta.3) and choose that file under **Assets**.
+1. [Download Hide-windows-x64.zip](https://github.com/DeriitoMe/Hide/releases/download/v1.0.0/Hide-windows-x64.zip), or open the [release page](https://github.com/DeriitoMe/Hide/releases/tag/v1.0.0) and choose that file under **Assets**.
 2. Extract the ZIP into a writable folder.
 3. Open the Hide folder and double-click **Hide.exe** or **Start-Hide.cmd**.
 4. Find Hide in the Windows system tray; expand hidden icons if needed. The tray menu is currently in Chinese.
@@ -24,4 +24,4 @@ The ready-to-run file is **Hide-windows-x64.zip**. GitHub's **Source code** arch
 
 Compatibility is based on tested formats and samples. Complex colored XOR, compressed bitmap formats, oversized resources and system animations with unavailable full sources may not support partial fading. Unsupported schemes keep their normal appearance; complete hiding may work. Application-drawn cursors, games, elevated windows and protected desktops have separate limitations.
 
-This is a prerelease. Long-term use, sleep/lock cycles, IME workflows and compatibility across applications need further testing. [Validation report](VALIDATION.md) · [Issues](https://github.com/DeriitoMe/Hide/issues).
+Long-term use, sleep/lock cycles, IME workflows and compatibility across applications need further testing. [Validation report](VALIDATION.md) · [Issues](https://github.com/DeriitoMe/Hide/issues).
