@@ -12,6 +12,8 @@ Hide follows your current Windows cursor scheme. Apply a new scheme in Windows M
 
 Right-click the tray for transparency, complete hiding, pause, idle restoration, per-app detection and startup. Startup is off by default. “重新识别当前皮肤” rescans the current skin.
 
+Backspace and Ctrl+Backspace also start fading at your selected transparency; repeated deletion keeps the cursor faded. While enabled, Hide temporarily turns off Windows “Hide pointer while typing” so partial transparency stays visible. Pause, exit and recovery restore its previous state without changing the saved Windows preference.
+
 To start Hide at sign-in, check **随 Windows 启动** in the tray menu; uncheck it to disable. Keep the folder in place. After moving it, enable startup from the new location to update the path. Hide.exe --enable-startup and --disable-startup are also available and do not require administrator privileges.
 
 Before fading, Hide compares the configured skin with the displayed pointer images and hotspots. If they differ, fading is paused and the visible skin is preserved. Reapply your intended scheme in Windows Mouse Properties and rescan. Restoration explicitly reloads the latest custom role files, including roles that the Windows reload call may leave stale. Hide does not automatically choose a saved named scheme.

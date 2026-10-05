@@ -44,7 +44,11 @@ int main() {
     CHECK(classify_key(0x10, false, false, false, false) == KeyAction::Ignore);
     CHECK(classify_key(0xE5, false, false, false, false) == KeyAction::Text);
     CHECK(classify_key(0xE7, false, false, false, false) == KeyAction::Text);
-    CHECK(classify_key(0x08, false, false, false, false) == KeyAction::ContinueEditing);
+    CHECK(classify_key(0x08, false, false, false, false) == KeyAction::Text);
+    CHECK(classify_key(0x08, true, false, false, false) == KeyAction::Text);
+    CHECK(classify_key(0x08, false, true, false, false) == KeyAction::Ignore);
+    CHECK(classify_key(0x08, false, false, true, false) == KeyAction::Ignore);
+    CHECK(classify_key(0x2E, false, false, false, false) == KeyAction::ContinueEditing);
     InputState s;
     s.invalidate(1);
     s.resolve(Focus::Editable, 1, 100);
@@ -95,6 +99,10 @@ int main() {
     CHECK(!s.faded);
     s.invalidate(6);
     s.resolve(Focus::Editable, 6, 6000);
+    auto backspace = classify_key(0x08, false, false, false, false);
+    s.text(6000, 12, backspace == KeyAction::ContinueEditing);
+    CHECK(s.faded); // Deletion can start fading independently of earlier typing.
+    s.mouse(13);
     s.text(6001, 13, true);
     CHECK(!s.faded);
     s.text(6002, 14);
@@ -109,6 +117,27 @@ int main() {
     CHECK(s.faded);
     s.mouse(17);
     CHECK(!s.faded);
+    InputState deletion;
+    deletion.invalidate(1);
+    deletion.resolve(Focus::Editable, 1, 0);
+    for (uint64_t i = 1; i <= 50; ++i) {
+        deletion.text(i * 100, i, backspace == KeyAction::ContinueEditing);
+        deletion.tick(i * 100 + 99);
+        CHECK(deletion.faded);
+    }
+    deletion.tick(6499);
+    CHECK(deletion.faded);
+    deletion.tick(6500);
+    CHECK(!deletion.faded);
+    deletion.invalidate(2);
+    deletion.text(7000, 51, backspace == KeyAction::ContinueEditing);
+    CHECK(deletion.pending);
+    deletion.mouse(52);
+    deletion.resolve(Focus::Editable, 2, 7001);
+    CHECK(!deletion.faded && !deletion.pending);
+    deletion.resolve(Focus::ReadOnly, 2, 7002);
+    deletion.text(7003, 53, backspace == KeyAction::ContinueEditing);
+    CHECK(!deletion.faded && !deletion.pending);
     for (unsigned i = 0; i < 10000; ++i) {
         s.text(1000000 + i, 18 + i * 2);
         CHECK(s.faded);

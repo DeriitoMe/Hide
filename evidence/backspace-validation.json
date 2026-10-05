@@ -1,0 +1,23 @@
+{
+  "passed": true,
+  "date": "2026-10-05",
+  "checks": [
+    "temporary Windows typing-hide override; pause, resume and normal exit restore preference",
+    "originally disabled typing-hide remains disabled; no unnecessary lease",
+    "guardian restores Windows typing-hide even when no cursor was faded",
+    "guardian restores cursor and Windows typing-hide after forced termination while faded",
+    "explicit recovery restores a stale typing-hide lease",
+    "startup recovers stale override before acquiring a fresh process-owned lease",
+    "cursor paths, scheme name and persistent Windows mouse preferences unchanged"
+  ],
+  "backspace_integration": {
+    "passed": true,
+    "reason": "standalone Backspace, repeated deletion, visible fade and mouse restoration",
+    "synthetic_input_to_fade_ms": 47.0,
+    "faded_cursor_alpha_max": 64,
+    "original_cursor_alpha_max": 255,
+    "fade_count": 1,
+    "restore_count": 1
+  },
+  "persistent_preferences_preserved": true
+}

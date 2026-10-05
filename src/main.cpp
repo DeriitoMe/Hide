@@ -34,7 +34,7 @@ static const wchar_t *ROLES[] = {L"Arrow",    L"Help",     L"AppStarting", L"Wai
                                  L"IBeam",    L"NWPen",    L"No",          L"SizeNS",  L"SizeWE",
                                  L"SizeNWSE", L"SizeNESW", L"SizeAll",     L"UpArrow", L"Hand",
                                  L"Pin",      L"Person"};
-static std::wstring base, legacy_resources, journal_path, settings_path, active_path;
+static std::wstring base, legacy_resources, journal_path, settings_path, active_path, vanish_path;
 static HWND main_window = nullptr, test_edit = nullptr;
 static HANDLE stop_event = nullptr, focus_event = nullptr, input_ready = nullptr,
               worker_thread = nullptr, input_thread = nullptr;
@@ -53,7 +53,7 @@ static std::atomic<LONG> force_pid{0}, exclude_pid{0};
 static InputState policy;
 static bool applied = false, shadow_was_on = false, shadow_changed = false, tray_added = false,
             supported = false, integration = false, crash_test = false, stress_test = false,
-            backend_test = false;
+            backend_test = false, backspace_test = false, vanish_checked = false;
 static int transparency = 75;
 static uint64_t fade_count = 0, restore_count = 0;
 static double last_fade_ms = 0, max_fade_ms = 0;
@@ -107,6 +107,74 @@ static void log_error(const char *s, DWORD code = 0) {
         fprintf(f, "%llu %s %lu\n", now(), s, code);
         fclose(f);
     }
+}
+static bool restore_mouse_vanish(DWORD owner = 0) {
+    // The lease file is exclusively deletable by one restorer. An older guardian
+    // cannot consume a newer process's lease during a fast restart.
+    HANDLE file = CreateFileW(vanish_path.c_str(), GENERIC_READ | DELETE, FILE_SHARE_READ,
+                              nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE)
+        return GetLastError() == ERROR_FILE_NOT_FOUND;
+    DWORD record[2]{}, got = 0;
+    LARGE_INTEGER size{};
+    bool ok = GetFileSizeEx(file, &size) && size.QuadPart == sizeof(record) &&
+              ReadFile(file, record, sizeof(record), &got, nullptr) && got == sizeof(record) &&
+              record[0] == 0x31564d48 && record[1] != 0;
+    if (!ok || (owner && owner != record[1])) {
+        CloseHandle(file);
+        return ok; // Another live generation owns a valid lease.
+    }
+    BOOL current = FALSE;
+    ok = SystemParametersInfoW(SPI_GETMOUSEVANISH, 0, &current, 0) != FALSE;
+    if (ok && !current)
+        ok = SystemParametersInfoW(SPI_SETMOUSEVANISH, 0, (PVOID)TRUE, SPIF_SENDCHANGE) != FALSE;
+    if (ok) {
+        FILE_DISPOSITION_INFO remove{TRUE};
+        ok = SetFileInformationByHandle(file, FileDispositionInfo, &remove, sizeof(remove)) != FALSE;
+    }
+    CloseHandle(file);
+    return ok;
+}
+static bool acquire_mouse_vanish() {
+    BOOL current = FALSE;
+    if (!SystemParametersInfoW(SPI_GETMOUSEVANISH, 0, &current, 0))
+        return false;
+    if (!current)
+        return true; // Nothing was changed, so there is no preference to restore.
+    HANDLE file = CreateFileW(vanish_path.c_str(), GENERIC_WRITE | DELETE, FILE_SHARE_READ,
+                              nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE)
+        return false;
+    DWORD record[2]{0x31564d48, GetCurrentProcessId()}, wrote = 0;
+    bool ok = WriteFile(file, record, sizeof(record), &wrote, nullptr) && wrote == sizeof(record) &&
+              FlushFileBuffers(file);
+    if (!ok) {
+        FILE_DISPOSITION_INFO remove{TRUE};
+        SetFileInformationByHandle(file, FileDispositionInfo, &remove, sizeof(remove));
+    }
+    CloseHandle(file);
+    if (!ok)
+        return false;
+    // Runtime override only: never persist a change to the Windows preference.
+    ok = SystemParametersInfoW(SPI_SETMOUSEVANISH, 0, (PVOID)FALSE, SPIF_SENDCHANGE) != FALSE;
+    if (!ok)
+        restore_mouse_vanish(GetCurrentProcessId());
+    return ok;
+}
+static bool sync_mouse_vanish() {
+    bool eligible = policy.enabled && supported && !preparing_scheme && !backend_test;
+    if (eligible) {
+        if (!vanish_checked) {
+            if (!acquire_mouse_vanish())
+                return false;
+            vanish_checked = true;
+        }
+    } else if (vanish_checked) {
+        if (!restore_mouse_vanish(GetCurrentProcessId()))
+            return false;
+        vanish_checked = false;
+    }
+    return true;
 }
 static Record read_role(HKEY k, const wchar_t *name) {
     Record r;
@@ -349,6 +417,10 @@ static bool restore() {
     return ok;
 }
 static void reconcile() {
+    if (!sync_mouse_vanish()) {
+        log_error("Windows typing-hide compatibility could not be updated", GetLastError());
+        policy.pause(true);
+    }
     monitor_mouse.store(policy.faded || policy.pending ? 1 : 0);
     if (policy.faded) {
         if (!fade())
@@ -773,6 +845,10 @@ static void menu() {
         SendMessageW(main_window, WM_COMMAND, cmd, 0);
 }
 static void status(const wchar_t *filename = L"status.json") {
+    CURSORINFO cursor{sizeof(cursor)};
+    bool cursor_known = GetCursorInfo(&cursor) != FALSE;
+    BOOL vanish = FALSE;
+    bool vanish_known = SystemParametersInfoW(SPI_GETMOUSEVANISH, 0, &vanish, 0) != FALSE;
     PROCESS_MEMORY_COUNTERS_EX m{};
     m.cb = sizeof(m);
     GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS *)&m, sizeof(m));
@@ -793,7 +869,8 @@ static void status(const wchar_t *filename = L"status.json") {
             "%llu,\"last_fade_ms\":%.3f,\"max_fade_ms\":%.3f,\"working_set_bytes\":%llu,\"private_"
             "bytes\":%llu,\"guardian_working_set_bytes\":%llu,\"guardian_private_bytes\":%llu,"
             "\"handles\":%lu,\"gdi_handles\":%lu,\"user_handles\":%lu,\"preparing\":%s,"
-            "\"scheme_version\":%llu,\"scheme_changes\":%llu,\"queue_ms\":%llu,\"startup\":%s}\n",
+            "\"scheme_version\":%llu,\"scheme_changes\":%llu,\"queue_ms\":%llu,\"startup\":%s,"
+            "\"cursor_showing\":%s,\"windows_typing_hide\":%s,\"typing_hide_lease\":%s}\n",
             GetCurrentProcessId(), policy.enabled ? "true" : "false", supported ? "true" : "false",
             applied ? "true" : "false", transparency, keys_seen.load(), text_seen.load(),
             mouse_seen.load(), focus_queries.load(), focus_failures.load(), (int)policy.focus,
@@ -803,7 +880,10 @@ static void status(const wchar_t *filename = L"status.json") {
             GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS),
             GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS),
             preparing_scheme ? "true" : "false", scheme_tracker.version(), scheme_changes,
-            last_queue_ms, startup_enabled() ? "true" : "false");
+            last_queue_ms, startup_enabled() ? "true" : "false",
+            cursor_known ? (cursor.flags & CURSOR_SHOWING ? "true" : "false") : "null",
+            vanish_known ? (vanish ? "true" : "false") : "null",
+            GetFileAttributesW(vanish_path.c_str()) != INVALID_FILE_ATTRIBUTES ? "true" : "false");
     fclose(f);
 }
 static bool spawn_guard() {
@@ -820,7 +900,8 @@ static bool spawn_guard() {
     InterlockedExchange64(&shared->heartbeat, now());
     HANDLE parent = nullptr;
     if (!DuplicateHandle(GetCurrentProcess(), GetCurrentProcess(), GetCurrentProcess(), &parent,
-                         SYNCHRONIZE | PROCESS_TERMINATE, TRUE, 0))
+                         SYNCHRONIZE | PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION,
+                         TRUE, 0))
         return false;
     auto exe = join(base, L"Hide.exe");
     auto cmd = L"\"" + exe + L"\" --guard " + std::to_wstring((uintptr_t)parent) + L" " +
@@ -857,6 +938,9 @@ static bool spawn_guard() {
     return ok;
 }
 static int guardian(HANDLE parent, HANDLE done, HANDLE mapping) {
+    DWORD parent_pid = GetProcessId(parent);
+    if (!parent_pid)
+        return 7;
     Shared *s = (Shared *)MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, sizeof(Shared));
     if (!s)
         return 7;
@@ -889,6 +973,14 @@ static int guardian(HANDLE parent, HANDLE done, HANDLE mapping) {
             Sleep(100);
         }
     }
+    bool vanish_ok = false;
+    for (int i = 0; i < 3; ++i) {
+        vanish_ok = restore_mouse_vanish(parent_pid);
+        if (vanish_ok)
+            break;
+        Sleep(100);
+    }
+    ok = ok && vanish_ok;
     UnmapViewOfFile(s);
     CloseHandle(parent);
     CloseHandle(done);
@@ -963,6 +1055,7 @@ static void scheme_ready() {
     scheme_error = result->error;
     prepared_scheme = std::move(result);
     policy.faded = policy.pending = false;
+    reconcile();
     update_tray();
     if (!supported) {
         log_error(scheme_error.c_str());
@@ -1018,7 +1111,8 @@ static int cursor_alpha_max() {
         max = std::max(max, 255 - ((int)images[1][i] - (int)images[0][i]));
     return max;
 }
-static int test_phase = 0, test_alpha = -1, test_cycles = 0;
+static int test_phase = 0, test_alpha = -1, test_cycles = 0, deletion_repeats = 0,
+           deletion_initial_length = 0;
 static uint64_t test_start = 0, test_deadline = 0;
 static POINT saved_pointer{};
 static double test_latency = 0;
@@ -1083,7 +1177,7 @@ static void integration_tick() {
             return;
         INPUT k[2]{};
         k[0].type = k[1].type = INPUT_KEYBOARD;
-        k[0].ki.wVk = k[1].ki.wVk = 'A';
+        k[0].ki.wVk = k[1].ki.wVk = backspace_test ? VK_BACK : 'A';
         k[1].ki.dwFlags = KEYEVENTF_KEYUP;
         test_start = now();
         if (SendInput(2, k, sizeof(INPUT)) != 2) {
@@ -1100,9 +1194,39 @@ static void integration_tick() {
         }
         test_latency = (double)(last_apply_tick - test_start);
         test_alpha = cursor_alpha_max();
+        CURSORINFO cursor{sizeof(cursor)};
+        if (transparency < 100 && (!GetCursorInfo(&cursor) || !(cursor.flags & CURSOR_SHOWING))) {
+            finish_test(false, "cursor object faded but actual pointer is hidden");
+            return;
+        }
         if (test_alpha < 0 ||
             std::abs(test_alpha - (int)((255 * (100 - transparency) + 50) / 100)) > 8) {
             finish_test(false, "system cursor opacity did not change");
+            return;
+        }
+        if (backspace_test && deletion_repeats < 8) {
+            if (GetForegroundWindow() != main_window || GetFocus() != test_edit) {
+                finish_test(false, "deletion test edit lost foreground; input not injected");
+                return;
+            }
+            if ((GetAsyncKeyState(VK_CONTROL) | GetAsyncKeyState(VK_MENU) |
+                 GetAsyncKeyState(VK_SHIFT)) & 0x8000) {
+                finish_test(false, "deletion test interrupted by modifier; input not injected");
+                return;
+            }
+            INPUT keys[2]{};
+            keys[0].type = keys[1].type = INPUT_KEYBOARD;
+            keys[0].ki.wVk = keys[1].ki.wVk = VK_BACK;
+            keys[1].ki.dwFlags = KEYEVENTF_KEYUP;
+            if (SendInput(2, keys, sizeof(INPUT)) != 2) {
+                finish_test(false, "repeated deletion injection failed");
+                return;
+            }
+            ++deletion_repeats;
+            return;
+        }
+        if (backspace_test && GetWindowTextLengthW(test_edit) != deletion_initial_length - 9) {
+            finish_test(false, "Backspace did not delete the controlled fixture");
             return;
         }
         INPUT mouse{};
@@ -1130,7 +1254,8 @@ static void integration_tick() {
             test_deadline = now() + 5000;
         } else
             finish_test(true, stress_test ? "30 live fade and restore cycles"
-                                          : "controlled first-character and mouse restoration");
+                               : backspace_test ? "standalone Backspace, repeated deletion, visible fade and mouse restoration"
+                                                : "controlled first-character and mouse restoration");
     }
 }
 static LRESULT CALLBACK window_proc(HWND hwnd, UINT m, WPARAM wp, LPARAM lp) {
@@ -1303,6 +1428,7 @@ static LONG WINAPI exception_filter(EXCEPTION_POINTERS *) {
     try {
         if (GetFileAttributesW(active_path.c_str()) != INVALID_FILE_ATTRIBUTES)
             restore_owned(true);
+        restore_mouse_vanish(GetCurrentProcessId());
     } catch (...) {
     }
     return EXCEPTION_EXECUTE_HANDLER;
@@ -1316,6 +1442,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     journal_path = join(base, L"state\\recovery.bin");
     settings_path = join(base, L"state\\settings.ini");
     active_path = join(base, L"state\\active.lock");
+    vanish_path = join(base, L"state\\mouse-vanish.lock");
     int argc = 0;
     LPWSTR *args = CommandLineToArgvW(GetCommandLineW(), &argc);
     std::wstring mode = argc > 1 ? args[1] : L"";
@@ -1337,6 +1464,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         if (w)
             SendMessageTimeoutW(w, M_PAUSE, 0, 0, SMTO_ABORTIFHUNG, 2000, &result);
         bool ok = restore_owned(recovering_active);
+        ok = restore_mouse_vanish() && ok;
         if (ok)
             DeleteFileW(active_path.c_str());
         return ok ? 0 : 1;
@@ -1364,7 +1492,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     ensure_directory(join(base, L"state"));
     SetUnhandledExceptionFilter(exception_filter);
     integration =
-        mode == L"--integration-test" || mode == L"--crash-test" || mode == L"--stress-test";
+        mode == L"--integration-test" || mode == L"--crash-test" || mode == L"--stress-test" ||
+        mode == L"--backspace-test";
+    backspace_test = mode == L"--backspace-test";
     crash_test = mode == L"--crash-test";
     stress_test = mode == L"--stress-test";
     backend_test = mode == L"--backend-test";
@@ -1390,6 +1520,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
             return 3;
         }
         DeleteFileW(active_path.c_str());
+    }
+    if (!restore_mouse_vanish()) {
+        MessageBoxW(nullptr, L"无法恢复上一次的打字隐藏设置。请先运行恢复鼠标.cmd。", L"Hide",
+                    MB_OK | MB_ICONERROR);
+        CloseHandle(mutex);
+        return 3;
     }
     BOOL shadow = FALSE;
     SystemParametersInfoW(SPI_GETCURSORSHADOW, 0, &shadow, 0);
@@ -1438,8 +1574,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     if (integration) {
         GetCursorPos(&saved_pointer);
         test_edit =
-            CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_MULTILINE,
+            CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", backspace_test ? L"Hide deletion fixture" : L"",
+                            WS_CHILD | WS_VISIBLE | ES_MULTILINE,
                             24, 30, 490, 100, main_window, nullptr, instance, nullptr);
+        if (backspace_test) {
+            deletion_initial_length = GetWindowTextLengthW(test_edit);
+            SendMessageW(test_edit, EM_SETSEL, deletion_initial_length, deletion_initial_length);
+        }
         // The first ShowWindow honors STARTUPINFO (including hidden launch).
         // Explicitly show the controlled test window after consuming that state.
         ShowWindow(main_window, SW_SHOW);
@@ -1475,6 +1616,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     if (worker_thread)
         WaitForSingleObject(worker_thread, 1500);
     restore();
+    if (!restore_mouse_vanish(GetCurrentProcessId()))
+        log_error("Windows typing-hide recovery retained for guardian", GetLastError());
     prepared_scheme.reset();
     if (guard_stop)
         SetEvent(guard_stop);

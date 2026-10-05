@@ -30,24 +30,29 @@ python tests/desktop_validation.py
 
 ## 输入与恢复测试
 
-先退出 Hide。以下测试显示专用 EDIT 窗口，只在它拥有输入焦点时发送字符：
+先退出 Hide。输入集成测试显示专用 EDIT 窗口，只在它拥有输入焦点时发送字符或 Backspace：
 
 ~~~powershell
 .\Hide.exe --integration-test 75
 .\Hide.exe --integration-test 50
 .\Hide.exe --integration-test 90
 .\Hide.exe --integration-test 100
+.\Hide.exe --backspace-test 75
 .\Hide.exe --stress-test
 .\Hide.exe --crash-test
 ~~~
 
 alpha_max 集成判据用于普通 alpha 皮肤。反色皮肤应使用背景混合测试，不能用同一个 alpha_max 数值解释其透明效果。
 
+半透明模式同时核对 GetCursorInfo 的 CURSOR_SHOWING 标志，避免仅检查指针对象而漏掉系统完全隐藏。--backspace-test 在专用窗口的固定测试文字末尾单独删除，再连续删除 8 次，核对实际可见性、透明度、删除数量及鼠标移动恢复。失去测试窗口焦点或检测到修饰键时停止注入。
+
 结果在 state/，检查 integration-result.json 的 passed。--crash-test 直接淡化并终止自己的主程序，不发送按键。--backend-test 是非输入诊断模式；仅在该模式接受内部测试淡化／恢复消息。
 
 ## 状态与常驻测量
 
 --status 写 state/status.json；--pause、--exit 和 --recover 分别暂停、退出及恢复。状态包含计数和资源指标，不包含按键值或文字。
+
+cursor_showing 表示实际指针可见标志，windows_typing_hide 是 Windows 打字隐藏的运行时状态，typing_hide_lease 表示临时覆盖的恢复标记。启用且皮肤准备完成时临时关闭打字隐藏，暂停、退出或守护恢复时还原；后端诊断模式不获取此标记。
 
 Python 桌面／测量脚本只用于开发验证。数小时观测应注明实际起止、负载、私有内存、工作集、CPU 和句柄，记录未完成与提前结束。
 

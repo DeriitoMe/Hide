@@ -53,12 +53,12 @@ inline KeyAction classify_key(unsigned key, bool ctrl, bool alt, bool win, bool 
         return KeyAction::Ignore;
     const bool altgr = ctrl && right_alt;
     if (ctrl && !altgr)
-        return key == 'V' ? KeyAction::Text : KeyAction::Ignore;
+        return key == 'V' || key == 0x08 ? KeyAction::Text : KeyAction::Ignore;
     if ((key >= 'A' && key <= 'Z') || (key >= '0' && key <= '9') || (key >= 0x60 && key <= 0x6F) ||
         (key >= 0xBA && key <= 0xC0) || (key >= 0xDB && key <= 0xDF) || key == 0xE2 ||
-        key == 0xE5 || key == 0xE7 || key == 0x20 || key == 0x0D)
+        key == 0xE5 || key == 0xE7 || key == 0x20 || key == 0x0D || key == 0x08)
         return KeyAction::Text;
-    if (key == 0x08 || key == 0x2E || (key >= 0x21 && key <= 0x28))
+    if (key == 0x2E || (key >= 0x21 && key <= 0x28))
         return KeyAction::ContinueEditing;
     return KeyAction::Ignore;
 }
