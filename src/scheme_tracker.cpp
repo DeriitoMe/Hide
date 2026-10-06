@@ -439,8 +439,29 @@ void SchemeTracker::loop() {
             }
             if (!(snapshot() == source))
                 throw std::runtime_error("cursor scheme changed during preparation");
-            if (!live_cursors_match(*prepared))
-                throw std::runtime_error("displayed cursor differs from configured skin; reapply your skin in Windows");
+            if (!live_cursors_match(*prepared)) {
+                std::string detail = "displayed cursor differs from configured skin; reapply your skin in Windows";
+                for (size_t i = 0; i < _countof(roles); ++i) {
+                    auto current = cursor_appearance(LoadCursorW(nullptr, MAKEINTRESOURCEW(ids[i])));
+                    if (current != prepared->original_appearances[i]) {
+                        detail += " (role=";
+                        for (auto p = roles[i]; *p; ++p) detail += char(*p);
+                        detail += ", live=" + std::to_string(current[0]) + "x" + std::to_string(current[1]);
+                        detail += ", source=" + std::to_string(prepared->original_appearances[i][0]) + "x" +
+                                  std::to_string(prepared->original_appearances[i][1]) + ")";
+                        CURSORINFO visible{sizeof(visible)};
+                        if (GetCursorInfo(&visible) && visible.hCursor) {
+                            auto shown = cursor_appearance(visible.hCursor);
+                            int matching = -1;
+                            for (size_t role_index = 0; role_index < prepared->original_appearances.size(); ++role_index)
+                                if (shown == prepared->original_appearances[role_index]) { matching = int(role_index); break; }
+                            detail += " visible_source_role=" + std::to_string(matching);
+                        }
+                        break;
+                    }
+                }
+                throw std::runtime_error(detail);
+            }
         } catch (const std::exception &e) {
             prepared->error = e.what();
         }

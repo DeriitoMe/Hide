@@ -1,0 +1,50 @@
+{
+  "passed": true,
+  "date": "2026-10-07",
+  "checks": [
+    "idempotent registration; interactive least-privilege task; bounded retries; no battery/runtime limit; old Run migrated",
+    "task-managed quiet launch; input hooks, skin and guardian ready; no tray or settings window",
+    "repeat launch opens existing settings; closing settings keeps engine; 25 open/close cycles without GUI handle growth",
+    "live tray toggle and pause/resume work in quiet mode",
+    "opening settings does not re-enable a task disabled by the user",
+    "forced main termination recovered cursor and supervisor restarted a healthy quiet instance",
+    "guardian loss returns explicit failure after restoring preferences",
+    "supervisor loss recovered by periodic Windows health check",
+    "explicit exit pauses health check while preserving next-logon startup",
+    "normal exit returns zero; repeated disable removes task; offline status cannot report stale online state",
+    "visible 75% Backspace fading and mouse restoration; persistent cursor/mouse preferences preserved"
+  ],
+  "settings_resource_samples": {
+    "private_bytes": [
+      5595136,
+      5623808
+    ],
+    "working_set_bytes": [
+      28471296,
+      28508160
+    ],
+    "handles": [
+      394,
+      399
+    ],
+    "gdi_handles": [
+      30,
+      30
+    ],
+    "user_handles": [
+      65,
+      65
+    ]
+  },
+  "persistent_preferences_preserved": true,
+  "backspace_integration": {
+    "passed": true,
+    "reason": "standalone Backspace, repeated deletion, visible fade and mouse restoration",
+    "synthetic_input_to_fade_ms": 63.0,
+    "faded_cursor_alpha_max": 64,
+    "original_cursor_alpha_max": 255,
+    "fade_count": 1,
+    "restore_count": 1
+  },
+  "backspace_retested_after_mouse_interruption": true
+}

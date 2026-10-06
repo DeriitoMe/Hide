@@ -6,6 +6,8 @@
 #include <UIAutomation.h>
 #include "input_state.hpp"
 #include "scheme_tracker.hpp"
+#include "startup.hpp"
+#include "shell_support.hpp"
 #include <algorithm>
 #include <atomic>
 #include <bcrypt.h>
@@ -25,17 +27,19 @@ using namespace typing_cursor;
 constexpr UINT M_TEXT = WM_APP + 1, M_MOUSE = WM_APP + 2, M_FOCUS = WM_APP + 3,
                M_RESOLVE = WM_APP + 4, M_TRAY = WM_APP + 5, M_STATUS = WM_APP + 6,
                M_PAUSE = WM_APP + 7, M_SCHEME = WM_APP + 8, M_PREPARED = WM_APP + 9,
-               M_TEST_FADE = WM_APP + 10, M_TEST_RESTORE = WM_APP + 11;
+               M_TEST_FADE = WM_APP + 10, M_TEST_RESTORE = WM_APP + 11,
+               M_SETTINGS = WM_APP + 12, M_INPUT_FAILED = WM_APP + 13;
 constexpr UINT C_ENABLE = 100, C_50 = 150, C_75 = 175, C_90 = 190, C_HIDE = 200, C_IDLE = 210,
                C_FORCE = 220, C_EXCLUDE = 221, C_AUTO = 222, C_STARTUP = 230, C_RESTORE = 240,
-               C_RESCAN = 241, C_EXIT = 250;
+               C_RESCAN = 241, C_SETTINGS = 242, C_TRAY = 243, C_SHORTCUT = 244, C_EXIT = 250;
 static const wchar_t *CLASS_NAME = L"Hide.Native.v1";
 static const wchar_t *ROLES[] = {L"Arrow",    L"Help",     L"AppStarting", L"Wait",    L"Crosshair",
                                  L"IBeam",    L"NWPen",    L"No",          L"SizeNS",  L"SizeWE",
                                  L"SizeNWSE", L"SizeNESW", L"SizeAll",     L"UpArrow", L"Hand",
                                  L"Pin",      L"Person"};
 static std::wstring base, legacy_resources, journal_path, settings_path, active_path, vanish_path;
-static HWND main_window = nullptr, test_edit = nullptr;
+static HWND main_window = nullptr, test_edit = nullptr, settings_window = nullptr;
+static HFONT settings_font = nullptr;
 static HANDLE stop_event = nullptr, focus_event = nullptr, input_ready = nullptr,
               worker_thread = nullptr, input_thread = nullptr;
 static HANDLE guard_process = nullptr, guard_stop = nullptr, shared_mapping = nullptr;
@@ -49,11 +53,23 @@ static std::atomic<uint64_t> keys_seen{0}, text_seen{0}, mouse_seen{0}, focus_qu
 static std::atomic<uint64_t> resolved_generation{0};
 static std::atomic<HWND> cached_foreground{nullptr}, requested_foreground{nullptr};
 static std::atomic<bool> pending_new_text{false};
+static std::atomic<bool> hooks_ready{false};
 static std::atomic<LONG> force_pid{0}, exclude_pid{0};
 static InputState policy;
 static bool applied = false, shadow_was_on = false, shadow_changed = false, tray_added = false,
             supported = false, integration = false, crash_test = false, stress_test = false,
-            backend_test = false, backspace_test = false, vanish_checked = false;
+            backend_test = false, backspace_test = false, vanish_checked = false,
+            show_tray = false, unattended = false, settings_requested = false,
+            shutting_down = false;
+static bool supervised_engine = false;
+static unsigned engine_flags = 0;
+static bool session_query_active = false, enabled_before_session_query = false;
+static int final_exit_code = 0;
+static uint64_t tray_retry_at = 0, started_tick = 0;
+static unsigned tray_retries = 0;
+static std::wstring executable;
+static hide_startup::Status startup_state;
+static uint64_t startup_checked_at = 0;
 static int transparency = 75;
 static uint64_t fade_count = 0, restore_count = 0;
 static double last_fade_ms = 0, max_fade_ms = 0;
@@ -62,6 +78,7 @@ static HICON tray_icon = nullptr;
 struct Shared {
     volatile LONG64 heartbeat;
     volatile LONG dirty, shadow;
+    volatile LONG intentional_stop, session_stop, exit_status;
 };
 static Shared *shared = nullptr;
 template <class T> struct Com {
@@ -95,18 +112,58 @@ static std::wstring lower(std::wstring s) {
         c = (wchar_t)towlower(c);
     return s;
 }
-static void log_error(const char *s, DWORD code = 0) {
-    auto path = join(base, L"state\\errors.log");
+static std::string utc_stamp() {
+    SYSTEMTIME stamp{};
+    GetSystemTime(&stamp);
+    char text[40]{};
+    sprintf_s(text, "%04u-%02u-%02uT%02u:%02u:%02u.%03uZ", stamp.wYear, stamp.wMonth,
+              stamp.wDay, stamp.wHour, stamp.wMinute, stamp.wSecond, stamp.wMilliseconds);
+    return text;
+}
+static void log_event(const char *s, DWORD code = 0) {
+    static SRWLOCK lock = SRWLOCK_INIT;
+    AcquireSRWLockExclusive(&lock);
+    auto path = join(base, L"state\\lifecycle.log");
     WIN32_FILE_ATTRIBUTE_DATA info{};
     if (GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &info) &&
-        info.nFileSizeLow > 65536)
-        DeleteFileW(path.c_str());
-    FILE *f = nullptr;
-    _wfopen_s(&f, path.c_str(), L"ab");
-    if (f) {
-        fprintf(f, "%llu %s %lu\n", now(), s, code);
-        fclose(f);
+        (info.nFileSizeHigh || info.nFileSizeLow >= 131072) &&
+        !MoveFileExW(path.c_str(), (path + L".1").c_str(), MOVEFILE_REPLACE_EXISTING)) {
+        ReleaseSRWLockExclusive(&lock);
+        return;
     }
+    HANDLE file = CreateFileW(path.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE |
+        FILE_SHARE_DELETE, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file != INVALID_HANDLE_VALUE) {
+        char record[1024]{};
+        int length = _snprintf_s(record, sizeof(record), _TRUNCATE, "%s Hide/1.1.0 pid=%lu %s code=%lu\r\n",
+                                utc_stamp().c_str(), GetCurrentProcessId(), s, code);
+        DWORD written = 0;
+        if (length > 0) WriteFile(file, record, (DWORD)length, &written, nullptr);
+        CloseHandle(file);
+    }
+    ReleaseSRWLockExclusive(&lock);
+}
+static void log_error(const char *s, DWORD code = 0) {
+    // Errors can recur on a timer; throttle identical messages without recording input.
+    static SRWLOCK lock = SRWLOCK_INIT;
+    static std::string last;
+    static DWORD last_code = 0;
+    static uint64_t last_tick = 0;
+    AcquireSRWLockExclusive(&lock);
+    bool emit = last != s || last_code != code || now() - last_tick >= 60000;
+    if (emit) { last = s; last_code = code; last_tick = now(); }
+    ReleaseSRWLockExclusive(&lock);
+    if (emit) log_event(s, code);
+}
+static void log_environment() {
+    wchar_t station[256]{}, desktop[256]{};
+    DWORD bytes = 0, session = 0;
+    GetUserObjectInformationW(GetProcessWindowStation(), UOI_NAME, station, sizeof(station), &bytes);
+    GetUserObjectInformationW(GetThreadDesktop(GetCurrentThreadId()), UOI_NAME, desktop, sizeof(desktop), &bytes);
+    ProcessIdToSessionId(GetCurrentProcessId(), &session);
+    char text[768]{};
+    sprintf_s(text, "interactive environment session=%lu station=%ls desktop=%ls", session, station, desktop);
+    log_event(text);
 }
 static bool restore_mouse_vanish(DWORD owner = 0) {
     // The lease file is exclusively deletable by one restorer. An older guardian
@@ -512,16 +569,26 @@ static DWORD WINAPI input_main(void *) {
     MSG m{};
     PeekMessageW(&m, nullptr, 0, 0, PM_NOREMOVE);
     refresh_modifiers();
-    HHOOK keyboard = SetWindowsHookExW(WH_KEYBOARD_LL, keyboard_hook, GetModuleHandleW(nullptr), 0),
-          mouse = SetWindowsHookExW(WH_MOUSE_LL, mouse_hook, GetModuleHandleW(nullptr), 0);
+    HHOOK keyboard = nullptr, mouse = nullptr;
+    for (unsigned attempt = 0; attempt < 3; ++attempt) {
+        keyboard = SetWindowsHookExW(WH_KEYBOARD_LL, keyboard_hook, GetModuleHandleW(nullptr), 0);
+        mouse = SetWindowsHookExW(WH_MOUSE_LL, mouse_hook, GetModuleHandleW(nullptr), 0);
+        if (keyboard && mouse) break;
+        log_error("input hook initialization failed", GetLastError());
+        if (keyboard) UnhookWindowsHookEx(keyboard);
+        if (mouse) UnhookWindowsHookEx(mouse);
+        keyboard = mouse = nullptr;
+        if (WaitForSingleObject(stop_event, 500 * (attempt + 1)) != WAIT_TIMEOUT) break;
+    }
     auto foreground = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr,
                                       win_event, 0, 0, WINEVENT_OUTOFCONTEXT);
     auto focus = SetWinEventHook(EVENT_OBJECT_FOCUS, EVENT_OBJECT_FOCUS, nullptr, win_event, 0, 0,
                                  WINEVENT_OUTOFCONTEXT);
     if (!keyboard || !mouse) {
-        log_error("input hook failed", GetLastError());
-        PostMessageW(main_window, M_PAUSE, 0, 0);
+        PostMessageW(main_window, M_INPUT_FAILED, 0, 0);
     }
+    hooks_ready.store(keyboard && mouse);
+    log_event(keyboard && mouse ? "input hooks ready" : "input hook retries exhausted");
     SetEvent(input_ready);
     while (GetMessageW(&m, nullptr, 0, 0) > 0) {
         if (m.message == WM_APP + 100) {
@@ -539,6 +606,7 @@ static DWORD WINAPI input_main(void *) {
         UnhookWindowsHookEx(keyboard);
     if (mouse)
         UnhookWindowsHookEx(mouse);
+    hooks_ready.store(false);
     return 0;
 }
 class FocusHandler : public IUIAutomationFocusChangedEventHandler {
@@ -719,45 +787,161 @@ static void save_settings() {
                                settings_path.c_str());
     WritePrivateProfileStringW(L"Settings", L"IdleRestore", policy.idle_ms ? L"1" : L"0",
                                settings_path.c_str());
+    WritePrivateProfileStringW(L"Settings", L"ShowTray", show_tray ? L"1" : L"0",
+                               settings_path.c_str());
+    if (!integration && !backend_test)
+        WritePrivateProfileStringW(L"Settings", L"Enabled", policy.enabled ? L"1" : L"0",
+                                   settings_path.c_str());
 }
 static bool startup_enabled() {
-    HKEY k = nullptr;
-    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0,
-                      KEY_QUERY_VALUE, &k) != ERROR_SUCCESS)
-        return false;
-    wchar_t value[32768]{}, module[32768]{};
-    DWORD n = sizeof(value), type = 0;
-    bool ok = RegQueryValueExW(k, L"Hide", nullptr, &type, (BYTE *)value, &n) == ERROR_SUCCESS &&
-              type == REG_SZ && n >= sizeof(wchar_t) && n % sizeof(wchar_t) == 0 &&
-              value[n / sizeof(wchar_t) - 1] == L'\0' &&
-              GetModuleFileNameW(nullptr, module, _countof(module)) > 0;
-    RegCloseKey(k);
-    return ok && lower(value) == lower(L"\"" + std::wstring(module) + L"\"");
+    if (!startup_checked_at || now() - startup_checked_at >= 5000) {
+        startup_state = hide_startup::inspect(executable);
+        startup_checked_at = now();
+    }
+    return startup_state.enabled && startup_state.matches;
 }
 static bool set_startup(bool enable) {
-    HKEY k = nullptr;
-    if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0,
-                        nullptr, 0, KEY_QUERY_VALUE | KEY_SET_VALUE, nullptr, &k,
-                        nullptr) != ERROR_SUCCESS)
-        return false;
-    LONG error = ERROR_SUCCESS;
-    if (!enable)
-        error = RegDeleteValueW(k, L"Hide");
-    else {
-        wchar_t module[32768]{};
-        DWORD n = GetModuleFileNameW(nullptr, module, _countof(module));
-        if (!n || n >= _countof(module)) {
-            RegCloseKey(k);
-            return false;
-        }
-        auto command = L"\"" + std::wstring(module) + L"\"";
-        error = RegSetValueExW(k, L"Hide", 0, REG_SZ, (const BYTE *)command.c_str(),
-                              (DWORD)((command.size() + 1) * sizeof(wchar_t)));
+    HRESULT error = S_OK;
+    bool ok = hide_startup::configure(executable, enable, error);
+    startup_checked_at = 0;
+    log_event(ok ? (enable ? "startup enabled" : "startup disabled") : "startup update failed",
+              (DWORD)error);
+    if (ok && enable && FAILED(error)) log_event("startup uses Run fallback", (DWORD)error);
+    return ok;
+}
+static bool create_shortcut() {
+    std::wstring path;
+    HRESULT error = S_OK;
+    bool ok = hide_shell::create_settings_shortcut(executable, path, error);
+    log_event(ok ? "settings desktop shortcut created" : "desktop shortcut creation failed", (DWORD)error);
+    return ok;
+}
+static void refresh_settings() {
+    if (!settings_window) return;
+    CheckDlgButton(settings_window, C_ENABLE, policy.enabled ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(settings_window, C_IDLE, policy.idle_ms ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(settings_window, C_STARTUP, startup_enabled() ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(settings_window, C_TRAY, show_tray ? BST_CHECKED : BST_UNCHECKED);
+    int selected = transparency == 50 ? 0 : transparency == 75 ? 1 : transparency == 90 ? 2 : 3;
+    SendDlgItemMessageW(settings_window, 301, CB_SETCURSEL, selected, 0);
+    bool guard_alive = guard_process && WaitForSingleObject(guard_process, 0) == WAIT_TIMEOUT;
+    std::wstring text = !hooks_ready.load() ? L"输入监听尚未就绪"
+                       : !guard_alive ? L"恢复保护未运行"
+                       : !policy.enabled ? L"已暂停，指针保持正常显示"
+                       : preparing_scheme ? L"正在准备当前鼠标皮肤"
+                       : !supported ? (scheme_error.find("displayed cursor differs") != std::string::npos
+                                       ? L"外观与配置不一致，请在 Windows 中重新应用当前皮肤"
+                                       : L"当前皮肤淡化受限，请重新识别")
+                                    : L"正在运行 · 输入与 Backspace 删除时淡化";
+    text += L"\r\n";
+    text += startup_state.task ? (startup_state.enabled ? L"登录启动：计划任务已启用"
+                                                       : L"登录启动：计划任务已禁用")
+                              : startup_state.enabled ? L"登录启动：传统启动项"
+                                                      : L"登录启动：未开启";
+    if (startup_state.registered && !startup_state.matches)
+        text += L"（程序路径已变化，请重新开启）";
+    SetDlgItemTextW(settings_window, 302, text.c_str());
+}
+static LRESULT CALLBACK settings_proc(HWND window, UINT message, WPARAM wp, LPARAM lp) {
+    switch (message) {
+    case WM_COMMAND: {
+        int command = LOWORD(wp);
+        if (command == 301 && HIWORD(wp) == CBN_SELCHANGE) {
+            LRESULT choice = SendDlgItemMessageW(window, 301, CB_GETCURSEL, 0, 0);
+            const UINT options[] = {C_50, C_75, C_90, C_HIDE};
+            if (choice >= 0 && choice < 4) SendMessageW(main_window, WM_COMMAND, options[choice], 0);
+        } else if (command == C_STARTUP) {
+            bool enable = IsDlgButtonChecked(window, C_STARTUP) == BST_CHECKED;
+            if (!set_startup(enable))
+                MessageBoxW(window, L"启动设置未能完成，原启动渠道已尽量保留。请检查系统启动设置。",
+                            L"Hide", MB_OK | MB_ICONERROR);
+        } else if (command == C_SHORTCUT) {
+            if (create_shortcut())
+                MessageBoxW(window, L"桌面入口已创建：Hide 设置。也可按 Ctrl+Alt+H 打开设置。",
+                            L"Hide", MB_OK | MB_ICONINFORMATION);
+            else
+                MessageBoxW(window, L"无法创建桌面快捷方式。仍可双击 Hide.exe 或设置.cmd 打开设置。",
+                            L"Hide", MB_OK | MB_ICONERROR);
+        } else if (command == C_ENABLE || command == C_IDLE || command == C_TRAY ||
+                   command == C_RESCAN || command == C_RESTORE || command == C_EXIT)
+            SendMessageW(main_window, WM_COMMAND, command, 0);
+        if (settings_window) refresh_settings();
+        return 0;
     }
-    RegCloseKey(k);
-    return error == ERROR_SUCCESS || (!enable && error == ERROR_FILE_NOT_FOUND);
+    case WM_TIMER:
+        refresh_settings();
+        return 0;
+    case WM_CLOSE:
+        DestroyWindow(window);
+        return 0;
+    case WM_DESTROY:
+        KillTimer(window, 1);
+        settings_window = nullptr;
+        if (settings_font) { DeleteObject(settings_font); settings_font = nullptr; }
+        return 0; // Closing settings never stops the engine.
+    }
+    return DefWindowProcW(window, message, wp, lp);
+}
+static void open_settings() {
+    if (integration || backend_test || shutting_down) return;
+    if (settings_window) {
+        ShowWindow(settings_window, SW_RESTORE);
+        SetForegroundWindow(settings_window);
+        return;
+    }
+    HINSTANCE instance = GetModuleHandleW(nullptr);
+    WNDCLASSW wc{};
+    wc.hInstance = instance;
+    wc.lpfnWndProc = settings_proc;
+    wc.lpszClassName = L"Hide.Settings.v1";
+    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wc.hIcon = tray_icon;
+    RegisterClassW(&wc);
+    settings_window = CreateWindowExW(WS_EX_CONTROLPARENT, wc.lpszClassName, L"Hide 设置",
+        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
+        560, 510, nullptr, nullptr, instance, nullptr);
+    if (!settings_window) { log_error("settings window creation failed", GetLastError()); return; }
+    settings_font = CreateFontW(-16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+                                OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                                DEFAULT_PITCH, L"Segoe UI");
+    auto control = [&](const wchar_t *kind, const wchar_t *label, DWORD style, int id,
+                       int x, int y, int width, int height) {
+        HWND child = CreateWindowExW(0, kind, label, WS_CHILD | WS_VISIBLE | style,
+            x, y, width, height, settings_window, (HMENU)(INT_PTR)id, instance, nullptr);
+        SendMessageW(child, WM_SETFONT, (WPARAM)settings_font, TRUE);
+        return child;
+    };
+    control(L"STATIC", L"关闭窗口不会退出 Hide。\r\n取消“显示托盘图标”可静默运行，自启仍然有效。", 0, 300, 24, 18, 500, 48);
+    control(L"BUTTON", L"启用输入淡化", BS_AUTOCHECKBOX | WS_TABSTOP, C_ENABLE, 24, 79, 240, 26);
+    control(L"STATIC", L"输入时透明度", 0, 303, 24, 117, 160, 24);
+    HWND alpha = control(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL,
+                         301, 180, 112, 320, 160);
+    for (const wchar_t *item : {L"50% 透明", L"75% 透明", L"90% 透明", L"完全隐藏"})
+        SendMessageW(alpha, CB_ADDSTRING, 0, (LPARAM)item);
+    control(L"BUTTON", L"停止输入 1.5 秒后恢复", BS_AUTOCHECKBOX | WS_TABSTOP,
+            C_IDLE, 24, 151, 500, 26);
+    control(L"BUTTON", L"随 Windows 登录启动（推荐保持开启）", BS_AUTOCHECKBOX | WS_TABSTOP,
+            C_STARTUP, 24, 183, 500, 26);
+    control(L"BUTTON", L"显示托盘图标（取消后进入静默模式）", BS_AUTOCHECKBOX | WS_TABSTOP, C_TRAY, 24, 215, 500, 26);
+    control(L"STATIC", L"静默后：桌面快捷方式或 Ctrl+Alt+H 可再打开设置。", 0, 304, 24, 252, 500, 24);
+    control(L"STATIC", L"", 0, 302, 24, 288, 500, 52);
+    control(L"BUTTON", L"创建桌面设置快捷方式", BS_PUSHBUTTON | WS_TABSTOP, C_SHORTCUT, 24, 350, 236, 32);
+    control(L"BUTTON", L"重新识别皮肤", BS_PUSHBUTTON | WS_TABSTOP, C_RESCAN, 24, 408, 145, 32);
+    control(L"BUTTON", L"恢复并暂停", BS_PUSHBUTTON | WS_TABSTOP, C_RESTORE, 187, 408, 145, 32);
+    control(L"BUTTON", L"退出 Hide", BS_PUSHBUTTON | WS_TABSTOP, C_EXIT, 350, 408, 145, 32);
+    refresh_settings();
+    SetTimer(settings_window, 1, 1000, nullptr);
+    // Consume a hidden launcher STARTUPINFO before displaying the first settings window.
+    ShowWindow(settings_window, SW_SHOW);
+    ShowWindow(settings_window, SW_SHOWNORMAL);
+    SetForegroundWindow(settings_window);
 }
 static void balloon(const wchar_t *title, const wchar_t *message) {
+    if (!show_tray || !tray_added) {
+        log_event("notice available in settings");
+        return;
+    }
     NOTIFYICONDATAW n{};
     n.cbSize = sizeof(n);
     n.hWnd = main_window;
@@ -769,10 +953,16 @@ static void balloon(const wchar_t *title, const wchar_t *message) {
     Shell_NotifyIconW(NIM_MODIFY, &n);
 }
 static void update_tray() {
+    if (!main_window) return;
     NOTIFYICONDATAW n{};
     n.cbSize = sizeof(n);
     n.hWnd = main_window;
     n.uID = 1;
+    if (!show_tray) {
+        if (tray_added) Shell_NotifyIconW(NIM_DELETE, &n);
+        tray_added = false;
+        return;
+    }
     n.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
     n.uCallbackMessage = M_TRAY;
     n.hIcon = tray_icon ? tray_icon : LoadIconW(nullptr, IDI_APPLICATION);
@@ -781,8 +971,15 @@ static void update_tray() {
                : !supported       ? std::wstring(L"Hide · 当前皮肤淡化受限")
                                   : L"Hide · 输入时" + std::to_wstring(transparency) + L"%透明";
     wcsncpy_s(n.szTip, tip.c_str(), _TRUNCATE);
-    Shell_NotifyIconW(tray_added ? NIM_MODIFY : NIM_ADD, &n);
-    tray_added = true;
+    if (Shell_NotifyIconW(tray_added ? NIM_MODIFY : NIM_ADD, &n)) {
+        tray_added = true;
+        tray_retries = 0;
+    } else {
+        tray_added = false;
+        tray_retry_at = now() + 1000;
+        if (tray_retries < 10) ++tray_retries;
+        log_error("tray icon registration failed");
+    }
 }
 static void menu() {
     HMENU m = CreatePopupMenu();
@@ -799,6 +996,8 @@ static void menu() {
     AppendMenuW(m, MF_STRING, C_FORCE, L"当前应用：使用键盘检测");
     AppendMenuW(m, MF_STRING, C_EXCLUDE, L"当前应用：暂停淡化");
     AppendMenuW(m, MF_STRING | (startup_enabled() ? MF_CHECKED : 0), C_STARTUP, L"随 Windows 启动");
+    AppendMenuW(m, MF_STRING, C_SETTINGS, L"打开 Hide 设置");
+    AppendMenuW(m, MF_STRING, C_TRAY, L"隐藏托盘图标（双击程序可设置）");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(m, MF_STRING | MF_CHECKED | MF_GRAYED, 0, L"自动跟随当前鼠标皮肤");
     AppendMenuW(m, MF_STRING, C_RESCAN, L"重新识别当前皮肤");
@@ -845,6 +1044,7 @@ static void menu() {
         SendMessageW(main_window, WM_COMMAND, cmd, 0);
 }
 static void status(const wchar_t *filename = L"status.json") {
+    bool startup = startup_enabled();
     CURSORINFO cursor{sizeof(cursor)};
     bool cursor_known = GetCursorInfo(&cursor) != FALSE;
     BOOL vanish = FALSE;
@@ -870,7 +1070,12 @@ static void status(const wchar_t *filename = L"status.json") {
             "bytes\":%llu,\"guardian_working_set_bytes\":%llu,\"guardian_private_bytes\":%llu,"
             "\"handles\":%lu,\"gdi_handles\":%lu,\"user_handles\":%lu,\"preparing\":%s,"
             "\"scheme_version\":%llu,\"scheme_changes\":%llu,\"queue_ms\":%llu,\"startup\":%s,"
-            "\"cursor_showing\":%s,\"windows_typing_hide\":%s,\"typing_hide_lease\":%s}\n",
+            "\"cursor_showing\":%s,\"windows_typing_hide\":%s,\"typing_hide_lease\":%s,"
+            "\"running\":%s,\"sample_utc\":\"%s\",\"uptime_ms\":%llu,\"hooks_ready\":%s,"
+            "\"guardian_alive\":%s,\"show_tray\":%s,\"tray_added\":%s,\"settings_open\":%s,"
+            "\"guardian_pid\":%lu,\"supervised\":%s,"
+            "\"startup_backend\":\"%s\",\"startup_registered\":%s,\"startup_path_matches\":%s,"
+            "\"startup_last_result\":%ld,\"exit_code\":%d}\n",
             GetCurrentProcessId(), policy.enabled ? "true" : "false", supported ? "true" : "false",
             applied ? "true" : "false", transparency, keys_seen.load(), text_seen.load(),
             mouse_seen.load(), focus_queries.load(), focus_failures.load(), (int)policy.focus,
@@ -880,13 +1085,23 @@ static void status(const wchar_t *filename = L"status.json") {
             GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS),
             GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS),
             preparing_scheme ? "true" : "false", scheme_tracker.version(), scheme_changes,
-            last_queue_ms, startup_enabled() ? "true" : "false",
+            last_queue_ms, startup ? "true" : "false",
             cursor_known ? (cursor.flags & CURSOR_SHOWING ? "true" : "false") : "null",
             vanish_known ? (vanish ? "true" : "false") : "null",
-            GetFileAttributesW(vanish_path.c_str()) != INVALID_FILE_ATTRIBUTES ? "true" : "false");
+            GetFileAttributesW(vanish_path.c_str()) != INVALID_FILE_ATTRIBUTES ? "true" : "false",
+            shutting_down ? "false" : "true", utc_stamp().c_str(), now() - started_tick,
+            hooks_ready.load() ? "true" : "false",
+            guard_process && WaitForSingleObject(guard_process, 0) == WAIT_TIMEOUT ? "true" : "false",
+            show_tray ? "true" : "false", tray_added ? "true" : "false",
+            settings_window ? "true" : "false", guard_process ? GetProcessId(guard_process) : 0,
+            supervised_engine ? "true" : "false", startup_state.task ? "task" : startup ? "run" : "none",
+            startup_state.registered ? "true" : "false", startup_state.matches ? "true" : "false",
+            startup_state.last_result, final_exit_code);
     fclose(f);
 }
 static bool spawn_guard() {
+    if (supervised_engine) return shared && guard_stop && guard_process &&
+        WaitForSingleObject(guard_process, 0) == WAIT_TIMEOUT;
     SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
     guard_stop = CreateEventW(&sa, TRUE, FALSE, nullptr);
     shared_mapping =
@@ -937,7 +1152,8 @@ static bool spawn_guard() {
     }
     return ok;
 }
-static int guardian(HANDLE parent, HANDLE done, HANDLE mapping) {
+static int guardian(HANDLE parent, HANDLE done, HANDLE mapping, DWORD *observed_exit = nullptr,
+                    bool *intentional = nullptr, bool *session_stop = nullptr) {
     DWORD parent_pid = GetProcessId(parent);
     if (!parent_pid)
         return 7;
@@ -945,22 +1161,32 @@ static int guardian(HANDLE parent, HANDLE done, HANDLE mapping) {
     if (!s)
         return 7;
     HANDLE events[] = {parent, done};
-    uint64_t last_poll = now(), resume_grace = now();
+    uint64_t last_poll = now(), resume_grace = now() + 30000;
+    log_event("guardian started", parent_pid);
     for (;;) {
         DWORD w = WaitForMultipleObjects(2, events, FALSE, 1000);
         if (w == WAIT_OBJECT_0 || w == WAIT_OBJECT_0 + 1 || w == WAIT_FAILED)
             break;
         uint64_t tick = now();
         if (tick - last_poll > 5000)
-            resume_grace = tick;
+            resume_grace = tick + 15000;
         last_poll = tick;
         auto heartbeat = std::max((uint64_t)s->heartbeat, resume_grace);
         if (tick > heartbeat && tick - heartbeat > 12000) {
+            log_event("guardian heartbeat timeout", parent_pid);
             TerminateProcess(parent, 8);
             WaitForSingleObject(parent, 2000);
             break;
         }
     }
+    DWORD parent_exit = STILL_ACTIVE;
+    if (WaitForSingleObject(parent, 0) == WAIT_TIMEOUT && WaitForSingleObject(done, 0) == WAIT_OBJECT_0)
+        WaitForSingleObject(parent, 3000);
+    GetExitCodeProcess(parent, &parent_exit);
+    if (observed_exit) *observed_exit = parent_exit == STILL_ACTIVE ? DWORD(s->exit_status) : parent_exit;
+    if (intentional) *intentional = s->intentional_stop != 0;
+    if (session_stop) *session_stop = s->session_stop != 0;
+    log_event("guardian parent stop observed", parent_exit);
     bool dirty = s->dirty != 0, shadow = s->shadow != 0;
     bool ok = true;
     if (dirty || shadow) {
@@ -981,11 +1207,118 @@ static int guardian(HANDLE parent, HANDLE done, HANDLE mapping) {
         Sleep(100);
     }
     ok = ok && vanish_ok;
+    log_event(ok ? "guardian recovery complete" : "guardian recovery failed");
     UnmapViewOfFile(s);
     CloseHandle(parent);
     CloseHandle(done);
     CloseHandle(mapping);
     return ok ? 0 : 9;
+}
+static bool launch_supervisor(unsigned flags) {
+    auto command = L"\"" + executable + L"\" --supervise " + std::to_wstring(flags);
+    STARTUPINFOW info{sizeof(info)};
+    info.dwFlags = STARTF_USESHOWWINDOW;
+    info.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION process{};
+    bool ok = CreateProcessW(executable.c_str(), command.data(), nullptr, nullptr, FALSE,
+                             CREATE_NO_WINDOW, nullptr, base.c_str(), &info, &process) != FALSE;
+    if (ok) { CloseHandle(process.hThread); CloseHandle(process.hProcess); }
+    return ok;
+}
+static int supervise(unsigned flags) {
+    ensure_directory(join(base, L"state"));
+    HANDLE singleton = CreateMutexW(nullptr, FALSE, L"Local\\Hide.Supervisor.v1");
+    if (!singleton) return 5;
+    if (GetLastError() == ERROR_ALREADY_EXISTS || FindWindowW(CLASS_NAME, nullptr)) {
+        CloseHandle(singleton);
+        return 0;
+    }
+    log_event("supervisor started");
+    if (!hide_startup::health_check(executable, true)) log_error("health trigger resume failed");
+    unsigned attempts = 0;
+    int result = 0;
+    for (;;) {
+        SECURITY_ATTRIBUTES security{sizeof(security), nullptr, TRUE};
+        HANDLE stopped = CreateEventW(&security, TRUE, FALSE, nullptr);
+        HANDLE memory = CreateFileMappingW(INVALID_HANDLE_VALUE, &security, PAGE_READWRITE, 0,
+                                           sizeof(Shared), nullptr);
+        Shared *state = memory ? (Shared *)MapViewOfFile(memory, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(Shared)) : nullptr;
+        HANDLE supervisor = nullptr;
+        bool ok = state && stopped && DuplicateHandle(GetCurrentProcess(), GetCurrentProcess(),
+            GetCurrentProcess(), &supervisor, SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, TRUE, 0);
+        if (state) { ZeroMemory(state, sizeof(Shared)); state->heartbeat = now(); }
+        SIZE_T bytes = 0;
+        InitializeProcThreadAttributeList(nullptr, 1, 0, &bytes);
+        std::vector<BYTE> storage(bytes);
+        auto attributes = (LPPROC_THREAD_ATTRIBUTE_LIST)storage.data();
+        bool initialized = InitializeProcThreadAttributeList(attributes, 1, 0, &bytes) != FALSE;
+        HANDLE inherited[] = {supervisor, stopped, memory};
+        ok = ok && initialized && UpdateProcThreadAttribute(attributes, 0,
+            PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherited, sizeof(inherited), nullptr, nullptr) != FALSE;
+        STARTUPINFOEXW info{};
+        info.StartupInfo.cb = sizeof(info);
+        info.StartupInfo.dwFlags = STARTF_USESHOWWINDOW;
+        info.StartupInfo.wShowWindow = SW_HIDE;
+        info.lpAttributeList = attributes;
+        auto command = L"\"" + executable + L"\" --engine " + std::to_wstring((uintptr_t)supervisor) +
+            L" " + std::to_wstring((uintptr_t)stopped) + L" " + std::to_wstring((uintptr_t)memory) +
+            L" " + std::to_wstring(flags);
+        PROCESS_INFORMATION engine{};
+        uint64_t launched = now();
+        if (ok) ok = CreateProcessW(executable.c_str(), command.data(), nullptr, nullptr, TRUE,
+            EXTENDED_STARTUPINFO_PRESENT | CREATE_NO_WINDOW, nullptr, base.c_str(), &info.StartupInfo, &engine) != FALSE;
+        if (initialized) DeleteProcThreadAttributeList(attributes);
+        if (supervisor) CloseHandle(supervisor);
+        DWORD exit_code = 5;
+        bool intentional = false, session_end = false;
+        if (ok) {
+            CloseHandle(engine.hThread);
+            // guardian consumes duplicates, leaving this loop's handles reusable for cleanup.
+            HANDLE child = nullptr, stop_copy = nullptr, memory_copy = nullptr;
+            HANDLE self = GetCurrentProcess();
+            bool copies = DuplicateHandle(self, engine.hProcess, self, &child, 0, FALSE, DUPLICATE_SAME_ACCESS) &&
+                DuplicateHandle(self, stopped, self, &stop_copy, 0, FALSE, DUPLICATE_SAME_ACCESS) &&
+                DuplicateHandle(self, memory, self, &memory_copy, 0, FALSE, DUPLICATE_SAME_ACCESS);
+            if (copies) result = guardian(child, stop_copy, memory_copy, &exit_code, &intentional, &session_end);
+            else {
+                if (child) CloseHandle(child);
+                if (stop_copy) CloseHandle(stop_copy);
+                if (memory_copy) CloseHandle(memory_copy);
+                TerminateProcess(engine.hProcess, 5);
+                result = 5;
+            }
+            WaitForSingleObject(engine.hProcess, 3000);
+            CloseHandle(engine.hProcess);
+        } else { log_error("supervisor engine launch failed", GetLastError()); result = 0; }
+        if (state) UnmapViewOfFile(state);
+        if (memory) CloseHandle(memory);
+        if (stopped) CloseHandle(stopped);
+        if (intentional || (ok && exit_code == 0)) {
+            if (!session_end && !hide_startup::health_check(executable, false))
+                log_error("health trigger pause after normal exit failed");
+            result = 0;
+            break;
+        }
+        if (result != 0) {
+            hide_startup::health_check(executable, false);
+            break; // A recovery failure must retain evidence, not relaunch blindly.
+        }
+        auto startup = hide_startup::inspect(executable);
+        if (!startup.enabled || !startup.matches) { result = (int)exit_code; break; }
+        if (now() - launched >= 300000) attempts = 0;
+        if (++attempts > 3) {
+            hide_startup::health_check(executable, false);
+            log_error("supervisor restart budget exhausted", exit_code);
+            result = (int)exit_code;
+            break;
+        }
+        log_event("supervisor restarting failed engine", exit_code);
+        flags &= ~1u; // Recovery stays quiet even if the first launch opened settings.
+        Sleep(1000);
+    }
+    log_event("supervisor stopped", (DWORD)result);
+    CloseHandle(singleton);
+    return result;
 }
 static void scheme_changed(bool force) {
     if (!force && !preparing_scheme && supported && prepared_scheme &&
@@ -1057,6 +1390,7 @@ static void scheme_ready() {
     policy.faded = policy.pending = false;
     reconcile();
     update_tray();
+    log_event(supported ? "cursor scheme ready" : "cursor scheme unsupported");
     if (!supported) {
         log_error(scheme_error.c_str());
         balloon(L"当前皮肤的淡化暂不可用",
@@ -1262,10 +1596,19 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT m, WPARAM wp, LPARAM lp) {
     static UINT taskbar = RegisterWindowMessageW(L"TaskbarCreated");
     if (m == taskbar) {
         tray_added = false;
+        tray_retries = 0;
         update_tray();
         return 0;
     }
     switch (m) {
+    case M_SETTINGS:
+        open_settings();
+        return 1;
+    case M_INPUT_FAILED:
+        final_exit_code = 10;
+        log_event("input initialization exhausted; stopping for bounded startup retry");
+        PostMessageW(hwnd, WM_CLOSE, 0, 0);
+        return 0;
     case M_TEST_FADE:
         if (!backend_test)
             return 0;
@@ -1321,13 +1664,18 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT m, WPARAM wp, LPARAM lp) {
     case M_PAUSE:
         policy.pause(true);
         reconcile();
+        save_settings();
         update_tray();
         return 0;
     case M_STATUS:
         status();
         return 0;
     case M_TRAY:
-        if (lp == WM_RBUTTONUP || lp == WM_CONTEXTMENU)
+        if (lp == (LPARAM)-1) {
+            show_tray = wp != 0;
+            tray_retries = 0;
+            update_tray();
+        } else if (lp == WM_RBUTTONUP || lp == WM_CONTEXTMENU)
             menu();
         else if (lp == WM_LBUTTONDBLCLK)
             SendMessageW(hwnd, WM_COMMAND, C_ENABLE, 0);
@@ -1340,10 +1688,21 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT m, WPARAM wp, LPARAM lp) {
         if (cmd < 100 || cmd > 250)
             return DefWindowProcW(hwnd, m, wp, lp);
         if (cmd == C_EXIT) {
+            log_event("explicit user exit");
             PostMessageW(hwnd, WM_CLOSE, 0, 0);
             return 0;
         }
-        if (cmd == C_ENABLE) {
+        if (cmd == C_SETTINGS) {
+            open_settings();
+            return 0;
+        } else if (cmd == C_TRAY) {
+            if (show_tray && !create_shortcut())
+                MessageBoxW(settings_window ? settings_window : main_window,
+                            L"桌面入口未能创建。静默后仍可双击 Hide.exe 或设置.cmd 打开设置。",
+                            L"Hide", MB_OK | MB_ICONINFORMATION);
+            show_tray = !show_tray;
+            tray_retries = 0;
+        } else if (cmd == C_ENABLE) {
             policy.pause(policy.enabled);
         } else if (cmd == C_RESCAN)
             scheme_changed(true);
@@ -1370,14 +1729,20 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT m, WPARAM wp, LPARAM lp) {
         if (wp == 1) {
             if (shared)
                 InterlockedExchange64(&shared->heartbeat, now());
-            if (guard_process && WaitForSingleObject(guard_process, 0) != WAIT_TIMEOUT &&
-                policy.enabled) {
+            if (guard_process && WaitForSingleObject(guard_process, 0) != WAIT_TIMEOUT) {
                 policy.pause(true);
                 supported = false;
                 log_error("recovery guardian unavailable");
-                balloon(L"Hide 已暂停", L"恢复保护已停止，请退出后重新启动。");
-                update_tray();
+                final_exit_code = 11;
+                PostMessageW(hwnd, WM_CLOSE, 0, 0);
             }
+            if (hooks_ready.load() && input_thread && WaitForSingleObject(input_thread, 0) != WAIT_TIMEOUT) {
+                final_exit_code = 10;
+                log_error("input thread stopped unexpectedly");
+                PostMessageW(hwnd, WM_CLOSE, 0, 0);
+            }
+            if (show_tray && !tray_added && tray_retries < 10 && now() >= tray_retry_at)
+                update_tray();
             policy.tick(now());
             reconcile();
             if (requested_foreground.load() != GetForegroundWindow())
@@ -1410,12 +1775,32 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT m, WPARAM wp, LPARAM lp) {
         }
         return TRUE;
     case WM_QUERYENDSESSION:
+        log_event("Windows session ending");
+        if (!session_query_active) enabled_before_session_query = policy.enabled;
+        session_query_active = true;
+        if (shared) { shared->intentional_stop = 1; shared->session_stop = 1; }
         policy.pause(true);
         reconcile();
         return TRUE;
+    case WM_ENDSESSION:
+        if (wp) PostMessageW(hwnd, WM_CLOSE, 0, 0);
+        else if (session_query_active) {
+            session_query_active = false;
+            if (shared) { shared->intentional_stop = 0; shared->session_stop = 0; }
+            policy.pause(!enabled_before_session_query);
+            reconcile();
+            log_event("Windows session end cancelled; previous enable state restored");
+        }
+        return 0;
     case WM_CLOSE:
+        if (shared) {
+            shared->intentional_stop = final_exit_code == 0 ? 1 : 0;
+            shared->session_stop = session_query_active ? 1 : 0;
+        }
+        shutting_down = true;
         policy.pause(true);
         reconcile();
+        if (settings_window) DestroyWindow(settings_window);
         DestroyWindow(hwnd);
         return 0;
     case WM_DESTROY:
@@ -1426,6 +1811,7 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT m, WPARAM wp, LPARAM lp) {
 }
 static LONG WINAPI exception_filter(EXCEPTION_POINTERS *) {
     try {
+        log_event("unhandled exception; restoring cursor preferences");
         if (GetFileAttributesW(active_path.c_str()) != INVALID_FILE_ATTRIBUTES)
             restore_owned(true);
         restore_mouse_vanish(GetCurrentProcessId());
@@ -1436,6 +1822,8 @@ static LONG WINAPI exception_filter(EXCEPTION_POINTERS *) {
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     wchar_t module[32768];
     GetModuleFileNameW(nullptr, module, _countof(module));
+    executable = module;
+    started_tick = now();
     base = module;
     base.resize(base.find_last_of(L"\\/"));
     legacy_resources = join(base, L"resources");
@@ -1446,6 +1834,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     int argc = 0;
     LPWSTR *args = CommandLineToArgvW(GetCommandLineW(), &argc);
     std::wstring mode = argc > 1 ? args[1] : L"";
+    unattended = mode == L"--autostart" || mode == L"--quiet";
+    settings_requested = mode.empty() || mode == L"--settings";
     if (mode == L"--guard" && argc == 5) {
         auto p = (HANDLE)(uintptr_t)_wcstoui64(args[2], nullptr, 10),
              e = (HANDLE)(uintptr_t)_wcstoui64(args[3], nullptr, 10),
@@ -1453,10 +1843,45 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         LocalFree(args);
         return guardian(p, e, map);
     }
+    if (mode == L"--supervise") {
+        unsigned flags = argc > 2 ? unsigned(_wtoi(args[2])) : 0;
+        LocalFree(args);
+        return supervise(flags & 3u);
+    }
+    if (mode == L"--engine" && argc == 6) {
+        guard_process = (HANDLE)(uintptr_t)_wcstoui64(args[2], nullptr, 10);
+        guard_stop = (HANDLE)(uintptr_t)_wcstoui64(args[3], nullptr, 10);
+        shared_mapping = (HANDLE)(uintptr_t)_wcstoui64(args[4], nullptr, 10);
+        engine_flags = unsigned(_wtoi(args[5])) & 3u;
+        shared = (Shared *)MapViewOfFile(shared_mapping, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(Shared));
+        supervised_engine = true;
+        settings_requested = (engine_flags & 1u) != 0;
+        unattended = !settings_requested;
+        if (!shared || !GetProcessId(guard_process)) { LocalFree(args); return 7; }
+    }
     int test_transparency = argc > 2 ? _wtoi(args[2]) : 75;
     LocalFree(args);
     if (mode == L"--enable-startup" || mode == L"--disable-startup")
+    {
+        ensure_directory(join(base, L"state"));
         return set_startup(mode == L"--enable-startup") ? 0 : 1;
+    }
+    if (mode == L"--create-shortcut") {
+        ensure_directory(join(base, L"state"));
+        return create_shortcut() ? 0 : 1;
+    }
+    if (mode == L"--hide-tray" || mode == L"--show-tray") {
+        ensure_directory(join(base, L"state"));
+        bool visible = mode == L"--show-tray";
+        if (!WritePrivateProfileStringW(L"Settings", L"ShowTray", visible ? L"1" : L"0", settings_path.c_str()))
+            return 1;
+        auto w = FindWindowW(CLASS_NAME, nullptr);
+        if (w) {
+            DWORD_PTR result = 0;
+            SendMessageTimeoutW(w, M_TRAY, visible ? 1 : 0, -1, SMTO_ABORTIFHUNG, 2000, &result);
+        }
+        return 0;
+    }
     if (mode == L"--recover") {
         bool recovering_active = GetFileAttributesW(active_path.c_str()) != INVALID_FILE_ATTRIBUTES;
         auto w = FindWindowW(CLASS_NAME, nullptr);
@@ -1480,16 +1905,50 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     if (mode == L"--status") {
         auto w = FindWindowW(CLASS_NAME, nullptr);
         DWORD_PTR r = 0;
-        return w && SendMessageTimeoutW(w, M_STATUS, 0, 0, SMTO_ABORTIFHUNG, 2000, &r) ? 0 : 2;
+        if (w && SendMessageTimeoutW(w, M_STATUS, 0, 0, SMTO_ABORTIFHUNG, 2000, &r)) return 0;
+        if (!w) {
+            ensure_directory(join(base, L"state"));
+            FILE *file = nullptr;
+            _wfopen_s(&file, join(base, L"state\\status.json").c_str(), L"wb");
+            if (file) {
+                fprintf(file, "{\"running\":false,\"sample_utc\":\"%s\"}\n", utc_stamp().c_str());
+                fclose(file);
+            }
+        }
+        return 2;
+    }
+    if (mode.empty() || mode == L"--settings" || mode == L"--quiet" || mode == L"--autostart") {
+        HWND window = FindWindowW(CLASS_NAME, nullptr);
+        if (window) {
+            if (settings_requested) {
+                DWORD pid = 0; GetWindowThreadProcessId(window, &pid); AllowSetForegroundWindow(pid);
+                DWORD_PTR result = 0;
+                SendMessageTimeoutW(window, M_SETTINGS, 0, 0, SMTO_ABORTIFHUNG, 2000, &result);
+            }
+            return 0;
+        }
+        return launch_supervisor((settings_requested ? 1u : 0u) | (mode == L"--quiet" ? 2u : 0u)) ? 0 : 5;
     }
     HANDLE mutex = CreateMutexW(nullptr, FALSE, L"Local\\Hide.Native.v1");
     if (!mutex)
         return 1;
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        if (settings_requested) {
+            HWND window = FindWindowW(CLASS_NAME, nullptr);
+            if (window) {
+                DWORD pid = 0;
+                GetWindowThreadProcessId(window, &pid);
+                AllowSetForegroundWindow(pid);
+                DWORD_PTR result = 0;
+                SendMessageTimeoutW(window, M_SETTINGS, 0, 0, SMTO_ABORTIFHUNG, 2000, &result);
+            }
+        }
         CloseHandle(mutex);
         return 0;
     }
-    ensure_directory(join(base, L"state"));
+    if (!ensure_directory(join(base, L"state"))) return 4;
+    log_event(unattended ? "engine starting unattended" : "engine starting");
+    log_environment();
     SetUnhandledExceptionFilter(exception_filter);
     integration =
         mode == L"--integration-test" || mode == L"--crash-test" || mode == L"--stress-test" ||
@@ -1498,6 +1957,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     crash_test = mode == L"--crash-test";
     stress_test = mode == L"--stress-test";
     backend_test = mode == L"--backend-test";
+    bool fresh_install = GetFileAttributesW(settings_path.c_str()) == INVALID_FILE_ATTRIBUTES;
+    show_tray = GetPrivateProfileIntW(L"Settings", L"ShowTray", 1, settings_path.c_str()) != 0;
+    if (mode == L"--quiet" || (engine_flags & 2u)) show_tray = false;
+    if (!integration && !backend_test)
+        policy.pause(GetPrivateProfileIntW(L"Settings", L"Enabled", 1, settings_path.c_str()) == 0);
     transparency = GetPrivateProfileIntW(L"Settings", L"Transparency", 75, settings_path.c_str());
     if (transparency != 50 && transparency != 75 && transparency != 90 && transparency != 100)
         transparency = 75;
@@ -1506,6 +1970,17 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         transparency = test_transparency;
     policy.idle_ms =
         GetPrivateProfileIntW(L"Settings", L"IdleRestore", 1, settings_path.c_str()) ? 1500 : 0;
+    if (!integration && !backend_test &&
+        !GetPrivateProfileIntW(L"Settings", L"SetupComplete", 0, settings_path.c_str())) {
+        auto existing_startup = hide_startup::inspect(executable);
+        if ((fresh_install && !existing_startup.registered) ||
+            (!existing_startup.task && existing_startup.enabled && existing_startup.matches)) {
+            if (!set_startup(true)) log_error("first setup could not enable sign-in startup");
+        }
+        if (fresh_install && !(engine_flags & 2u)) settings_requested = true;
+        save_settings();
+        WritePrivateProfileStringW(L"Settings", L"SetupComplete", L"1", settings_path.c_str());
+    }
     if (backend_test) {
         policy.pause(true);
         policy.idle_ms = 0;
@@ -1514,7 +1989,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     // overwrites another theme's paths because only our resource paths are owned.
     if (GetFileAttributesW(active_path.c_str()) != INVALID_FILE_ATTRIBUTES) {
         if (!restore_owned(true)) {
-            MessageBoxW(nullptr, L"无法恢复上一次的指针状态。请先运行 恢复鼠标.cmd。", L"Hide",
+            log_error("startup cursor recovery failed");
+            if (!unattended) MessageBoxW(nullptr, L"无法恢复上一次的指针状态。请先运行 恢复鼠标.cmd。", L"Hide",
                         MB_OK | MB_ICONERROR);
             CloseHandle(mutex);
             return 3;
@@ -1522,7 +1998,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         DeleteFileW(active_path.c_str());
     }
     if (!restore_mouse_vanish()) {
-        MessageBoxW(nullptr, L"无法恢复上一次的打字隐藏设置。请先运行恢复鼠标.cmd。", L"Hide",
+        log_error("startup typing-hide recovery failed");
+        if (!unattended) MessageBoxW(nullptr, L"无法恢复上一次的打字隐藏设置。请先运行恢复鼠标.cmd。", L"Hide",
                     MB_OK | MB_ICONERROR);
         CloseHandle(mutex);
         return 3;
@@ -1531,17 +2008,29 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     SystemParametersInfoW(SPI_GETCURSORSHADOW, 0, &shadow, 0);
     shadow_was_on = shadow != FALSE;
     if (!spawn_guard()) {
-        MessageBoxW(nullptr, L"无法准备指针恢复保护，程序已停止。", L"Hide", MB_OK | MB_ICONERROR);
+        log_error("startup guardian creation failed", GetLastError());
+        if (!unattended) MessageBoxW(nullptr, L"无法准备指针恢复保护，程序已停止。", L"Hide", MB_OK | MB_ICONERROR);
         CloseHandle(mutex);
         return 5;
     }
     stop_event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     focus_event = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     input_ready = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    if (!stop_event || !focus_event || !input_ready) {
+        log_error("startup event creation failed", GetLastError());
+        SetEvent(guard_stop);
+        CloseHandle(mutex);
+        return 6;
+    }
     WNDCLASSW wc{};
     wc.hInstance = instance;
     wc.lpfnWndProc = window_proc;
     wc.lpszClassName = CLASS_NAME;
+    tray_icon = (HICON)LoadImageW(nullptr, join(base, L"Hide.ico").c_str(), IMAGE_ICON, 32, 32,
+                                  LR_LOADFROMFILE);
+    if (!tray_icon)
+        tray_icon = (HICON)LoadImageW(instance, MAKEINTRESOURCEW(1), IMAGE_ICON, 32, 32, 0);
+    wc.hIcon = tray_icon;
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
     RegisterClassW(&wc);
@@ -1549,27 +2038,32 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
                                   integration ? WS_OVERLAPPEDWINDOW : 0, CW_USEDEFAULT,
                                   CW_USEDEFAULT, 560, 220, nullptr, nullptr, instance, nullptr);
     if (!main_window) {
+        log_error("startup engine window creation failed", GetLastError());
         SetEvent(guard_stop);
         CloseHandle(mutex);
         return 6;
     }
     if (!scheme_tracker.start(main_window, M_SCHEME, M_PREPARED, join(base, L"state\\cache-v2"))) {
-        policy.pause(true);
-        preparing_scheme = false;
-        scheme_error = "scheme monitor initialization failed";
+        final_exit_code = 12;
+        log_error("scheme monitor initialization failed");
+        PostMessageW(main_window, WM_CLOSE, 0, 0);
     } else
         PostMessageW(main_window, M_SCHEME, 0, 0);
-    tray_icon = (HICON)LoadImageW(nullptr, join(base, L"Hide.ico").c_str(), IMAGE_ICON, 32, 32,
-                                  LR_LOADFROMFILE);
     update_tray();
-    SetTimer(main_window, 1, 250, nullptr);
-    RegisterHotKey(main_window, 1, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_F12);
+    if (!SetTimer(main_window, 1, 250, nullptr)) {
+        final_exit_code = 13;
+        log_error("engine heartbeat timer creation failed", GetLastError());
+        PostMessageW(main_window, WM_CLOSE, 0, 0);
+    }
+    if (!RegisterHotKey(main_window, 1, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_F12))
+        log_error("emergency hotkey registration failed", GetLastError());
     WTSRegisterSessionNotification(main_window, NOTIFY_FOR_THIS_SESSION);
     worker_thread = CreateThread(nullptr, 0, focus_main, nullptr, 0, nullptr);
     input_thread = CreateThread(nullptr, 0, input_main, nullptr, 0, nullptr);
     if (!worker_thread || !input_thread) {
-        policy.pause(true);
-        balloon(L"Hide 已暂停", L"输入监听初始化失败，请退出后重试。");
+        final_exit_code = 10;
+        log_error("input worker thread creation failed", GetLastError());
+        PostMessageW(main_window, WM_CLOSE, 0, 0);
     }
     if (integration) {
         GetCursorPos(&saved_pointer);
@@ -1599,14 +2093,17 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         test_deadline = now() + 8000;
         SetTimer(main_window, 2, 25, nullptr);
         invalidate_focus();
-    } else
-        balloon(L"Hide 已启动", L"开始输入时淡化；移动、点击或滚动恢复。右键托盘图标可设置"
-                                L"，Ctrl+Alt+F12 可立即恢复并暂停。");
+    } else if (settings_requested)
+        PostMessageW(main_window, M_SETTINGS, 0, 0);
     MSG msg{};
-    while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
+    BOOL message_result = 0;
+    while ((message_result = GetMessageW(&msg, nullptr, 0, 0)) > 0) {
+        if (settings_window && IsDialogMessageW(settings_window, &msg)) continue;
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
+    if (message_result == -1) { final_exit_code = 14; log_error("engine message loop failed", GetLastError()); }
+    shutting_down = true;
     scheme_tracker.stop();
     stopping.store(1);
     SetEvent(stop_event);
@@ -1620,8 +2117,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         log_error("Windows typing-hide recovery retained for guardian", GetLastError());
     prepared_scheme.reset();
     if (guard_stop)
+    {
+        if (shared) shared->exit_status = final_exit_code;
         SetEvent(guard_stop);
-    if (guard_process)
+    }
+    if (guard_process && !supervised_engine)
         WaitForSingleObject(guard_process, 2000);
     NOTIFYICONDATAW n{};
     n.cbSize = sizeof(n);
@@ -1638,5 +2138,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
             CloseHandle(h);
     if (shared)
         UnmapViewOfFile(shared);
-    return 0;
+    guard_process = nullptr;
+    status();
+    log_event("engine stopped", (DWORD)final_exit_code);
+    return final_exit_code;
 }

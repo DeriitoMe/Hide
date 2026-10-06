@@ -7,22 +7,23 @@ import zipfile
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument('--version', default='v1.0.0')
+parser.add_argument('--version', default='v1.1.0')
 args = parser.parse_args()
 release = root / 'release'
 release.mkdir(exist_ok=True)
 archive = release / 'Hide-windows-x64.zip'
 required = ['Hide.exe', 'Hide.ico', 'Start-Hide.cmd', 'Recover-Cursor.cmd',
-            '启动.cmd', '恢复鼠标.cmd', 'README.md', 'CHANGELOG.md']
+            'Open-Settings.cmd', '启动.cmd', '恢复鼠标.cmd', '设置.cmd', 'README.md', 'CHANGELOG.md']
 selected = [root / name for name in required]
 for path in selected:
     if not path.is_file():
         raise FileNotFoundError(path)
-for name in ['DOWNLOAD.md', 'DOWNLOAD.en.md', 'VALIDATION.md', 'BUILDING.md', 'RELEASING.md']:
+for name in ['DOWNLOAD.md', 'DOWNLOAD.en.md', 'VALIDATION.md', 'QUIET-VALIDATION.md', 'BUILDING.md', 'RELEASING.md']:
     path = root / 'docs' / name
     if not path.is_file():
         raise FileNotFoundError(path)
     selected.append(path)
+selected.append(root / 'docs/images/hide-settings.png')
 with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as z:
     for path in sorted(selected):
         z.write(path, 'Hide/' + path.relative_to(root).as_posix())

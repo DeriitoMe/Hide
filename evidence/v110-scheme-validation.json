@@ -1,0 +1,156 @@
+{
+  "date": "2026-10-07",
+  "passed": true,
+  "checks": [
+    {
+      "case": "Ikaros",
+      "passed": true,
+      "fade_ms": 51.992
+    },
+    {
+      "case": "Default",
+      "passed": true,
+      "fade_ms": 67.388
+    },
+    {
+      "case": "System default empty paths",
+      "passed": true,
+      "fade_ms": 15.495
+    },
+    {
+      "case": "switch while faded, then fade/restore new scheme",
+      "passed": true
+    },
+    {
+      "case": "102 rapid scheme changes, latest wins",
+      "passed": true
+    },
+    {
+      "case": "mixed skin, only IBeam changed",
+      "passed": true
+    },
+    {
+      "case": "same filename source replaced",
+      "passed": true
+    },
+    {
+      "case": "malformed source preserves configuration and rejects fading",
+      "passed": true
+    },
+    {
+      "case": "500 live fade/restore cycles, no persistent handle growth",
+      "passed": true
+    },
+    {
+      "case": "forced termination after selecting new scheme, guardian preserves new choice",
+      "passed": true
+    },
+    {
+      "case": "restart keeps latest scheme",
+      "passed": true
+    },
+    {
+      "case": "exit while faded keeps newly selected scheme",
+      "passed": true
+    }
+  ],
+  "input_injected": false,
+  "stress": {
+    "cycles": 500,
+    "before": {
+      "pid": 58492,
+      "enabled": false,
+      "supported": true,
+      "faded": false,
+      "transparency": 75,
+      "keyboard_events": 0,
+      "text_events": 0,
+      "mouse_events": 0,
+      "focus_queries": 1,
+      "focus_failures": 0,
+      "focus_state": 2,
+      "fade_count": 10,
+      "restore_count": 10,
+      "last_fade_ms": 65.063,
+      "max_fade_ms": 68.378,
+      "working_set_bytes": 24866816,
+      "private_bytes": 5365760,
+      "guardian_working_set_bytes": 9076736,
+      "guardian_private_bytes": 1585152,
+      "handles": 364,
+      "gdi_handles": 10,
+      "user_handles": 49,
+      "preparing": false,
+      "scheme_version": 498,
+      "scheme_changes": 238,
+      "queue_ms": 0,
+      "startup": false,
+      "cursor_showing": true,
+      "windows_typing_hide": true,
+      "typing_hide_lease": false,
+      "running": true,
+      "sample_utc": "2026-10-06T17:53:19.846Z",
+      "uptime_ms": 14187,
+      "hooks_ready": true,
+      "guardian_alive": true,
+      "show_tray": false,
+      "tray_added": false,
+      "settings_open": false,
+      "guardian_pid": 44064,
+      "supervised": false,
+      "startup_backend": "none",
+      "startup_registered": false,
+      "startup_path_matches": false,
+      "startup_last_result": 0,
+      "exit_code": 0
+    },
+    "after": {
+      "pid": 58492,
+      "enabled": false,
+      "supported": true,
+      "faded": false,
+      "transparency": 75,
+      "keyboard_events": 0,
+      "text_events": 0,
+      "mouse_events": 0,
+      "focus_queries": 1,
+      "focus_failures": 0,
+      "focus_state": 2,
+      "fade_count": 510,
+      "restore_count": 510,
+      "last_fade_ms": 69.698,
+      "max_fade_ms": 100.412,
+      "working_set_bytes": 24793088,
+      "private_bytes": 5246976,
+      "guardian_working_set_bytes": 9019392,
+      "guardian_private_bytes": 1486848,
+      "handles": 358,
+      "gdi_handles": 10,
+      "user_handles": 48,
+      "preparing": false,
+      "scheme_version": 498,
+      "scheme_changes": 238,
+      "queue_ms": 0,
+      "startup": false,
+      "cursor_showing": true,
+      "windows_typing_hide": true,
+      "typing_hide_lease": false,
+      "running": true,
+      "sample_utc": "2026-10-06T17:54:59.836Z",
+      "uptime_ms": 114187,
+      "hooks_ready": true,
+      "guardian_alive": true,
+      "show_tray": false,
+      "tray_added": false,
+      "settings_open": false,
+      "guardian_pid": 44064,
+      "supervised": false,
+      "startup_backend": "none",
+      "startup_registered": false,
+      "startup_path_matches": false,
+      "startup_last_result": 0,
+      "exit_code": 0
+    },
+    "sampled_fade_p95_ms": 76.447
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "date": "2026-10-07",
+  "state": "interrupted",
+  "planned_hours": 8,
+  "observed_seconds": 720.594,
+  "sample_count": 13,
+  "observer_exit_code": "0xC000013A",
+  "keyboard_event_delta": 0,
+  "mouse_event_delta": 0,
+  "private_bytes_first": 7225344,
+  "private_bytes_last": 7516160,
+  "private_bytes_min": 7188480,
+  "private_bytes_max": 7516160,
+  "machine_cpu_percent_max": 0.0035,
+  "handles_first": 403,
+  "handles_last": 410,
+  "gdi_first": 30,
+  "gdi_last": 30,
+  "user_first": 64,
+  "user_last": 63,
+  "eight_hour_validation_complete": false
+}

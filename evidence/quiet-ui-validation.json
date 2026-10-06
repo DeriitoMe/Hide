@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "icon_matches_original": true,
+  "embedded_icon_matches_original": true,
+  "settings_close_keeps_engine": true,
+  "cancelled_session_end_restores_enabled_state": true,
+  "cancelled_session_end_preserves_pause": true,
+  "transparency": 75,
+  "private_bytes": 5210112,
+  "guardian_private_bytes": 2011136
+}

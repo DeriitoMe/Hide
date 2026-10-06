@@ -28,6 +28,13 @@ user.SendMessageTimeoutW.argtypes = [w.HWND,w.UINT,w.WPARAM,w.LPARAM,w.UINT,w.UI
 user.SendMessageTimeoutW.restype = c.c_ssize_t
 user.SystemParametersInfoW.argtypes = [w.UINT,w.UINT,c.c_void_p,w.UINT]
 user.SystemParametersInfoW.restype = w.BOOL
+user.LoadImageW.argtypes = [w.HINSTANCE,w.LPCWSTR,w.UINT,c.c_int,c.c_int,w.UINT]
+user.LoadImageW.restype = w.HANDLE
+user.SetSystemCursor.argtypes = [w.HANDLE,w.DWORD]
+user.SetSystemCursor.restype = w.BOOL
+user.DestroyCursor.argtypes = [w.HANDLE]
+user.DestroyCursor.restype = w.BOOL
+IDS=[32512,32651,32650,32514,32515,32513,32631,32648,32645,32644,32642,32643,32646,32516,32649,32671,32672]
 
 def capture():
     with winreg.OpenKey(winreg.HKEY_CURRENT_USER, KEY) as key:
@@ -46,6 +53,16 @@ def install(values, reload=True):
             else: winreg.SetValueEx(key,name,0,value[1],value[0])
     if reload:
         assert user.SystemParametersInfoW(0x57,0,None,0), 'system cursor reload failed'
+        # Mouse Properties applies custom role files explicitly. SPI_SETCURSORS
+        # alone may leave Person stale; reproduce a complete user application.
+        for role,ident in zip(ROLES,IDS):
+            entry=values[role]
+            if not entry or not entry[0]:continue
+            cursor=user.LoadImageW(None,os.path.expandvars(entry[0]),2,
+                                  user.GetSystemMetrics(13),user.GetSystemMetrics(14),0x10)
+            assert cursor,role
+            if not user.SetSystemCursor(cursor,ident):
+                user.DestroyCursor(cursor);raise AssertionError(('role apply failed',role))
 
 def send(message):
     window=user.FindWindowW('Hide.Native.v1',None)
@@ -85,7 +102,7 @@ def check_values(expected):
 
 initial=capture()
 assert not user.FindWindowW('Hide.Native.v1',None), 'exit Hide before running this test'
-results={'date':'2026-10-03','passed':False,'checks':[],'input_injected':False}
+results={'date':'2026-10-07','passed':False,'checks':[],'input_injected':False}
 process=None
 source_copy=ROOT/'build/source-replacement.ani'
 try:
@@ -115,6 +132,7 @@ try:
     replaced={**mixed,'Arrow':(str(source_copy),winreg.REG_SZ)}
     install(replaced);time.sleep(.15);before=wait_ready();fade();restore()
     shutil.copyfile(os.path.expandvars(schemes['Default']['Arrow'][0]),source_copy)
+    install(replaced)
     time.sleep(.15);after=wait_ready();assert after['scheme_changes']>before['scheme_changes'];fade();restore();check_values(replaced)
     results['checks'].append({'case':'same filename source replaced','passed':True})
     source_copy.write_bytes(b'bad cursor')

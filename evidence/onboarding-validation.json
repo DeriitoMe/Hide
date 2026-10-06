@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "date": "2026-10-07",
+  "checks": [
+    "fresh install shows original tray and visible guide; current-user sign-in startup enabled",
+    "choosing quiet keeps engine and startup; desktop link and Ctrl+Alt+H point to existing settings",
+    "quiet preference survives task launch; existing instance reused; settings close differs from exit"
+  ]
+}

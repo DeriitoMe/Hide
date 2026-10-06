@@ -2,19 +2,19 @@
 
 **Fade or hide your cursor while typing.**
 
-Hide 是一款轻量级 Windows 鼠标工具。开始输入文字时自动淡化或隐藏指针，移动、点击或滚动鼠标时恢复。它自动跟随你当前的系统鼠标皮肤，支持静态指针和动画指针。
+Hide 是一款轻量级 Windows 鼠标工具。开始输入文字时自动淡化或隐藏指针，移动、点击或滚动鼠标时恢复。它自动跟随当前系统鼠标皮肤，支持静态和动画指针。**首次启动显示原托盘图标与设置引导，默认开启登录自启；静默运行由你主动选择。**
 
-[![Windows x64](https://img.shields.io/badge/Windows-x64-0078D4)](https://github.com/DeriitoMe/Hide/releases/tag/v1.0.0) [![Release](https://img.shields.io/badge/release-1.0.0-blue)](https://github.com/DeriitoMe/Hide/releases/tag/v1.0.0)
+[![Windows x64](https://img.shields.io/badge/Windows-x64-0078D4)](https://github.com/DeriitoMe/Hide/releases/tag/v1.1.0) [![Release](https://img.shields.io/badge/release-1.1.0-blue)](https://github.com/DeriitoMe/Hide/releases/tag/v1.1.0)
 
 ## 下载并使用
 
-### [⬇ 直接下载 Windows 便携包](https://github.com/DeriitoMe/Hide/releases/download/v1.0.0/Hide-windows-x64.zip)
+### [⬇ 直接下载 Windows 便携包](https://github.com/DeriitoMe/Hide/releases/download/v1.1.0/Hide-windows-x64.zip)
 
-[发布页与 SHA256 校验文件](https://github.com/DeriitoMe/Hide/releases/tag/v1.0.0) · [详细下载教程](docs/DOWNLOAD.md) · [English guide](docs/DOWNLOAD.en.md)
+[发布页与 SHA256 校验文件](https://github.com/DeriitoMe/Hide/releases/tag/v1.1.0) · [详细下载教程](docs/DOWNLOAD.md) · [English guide](docs/DOWNLOAD.en.md)
 
 1. 下载 **Hide-windows-x64.zip**，右键 ZIP → **全部解压**，放到普通可写目录。
-2. 打开 Hide 文件夹，双击 **Hide.exe**，或 **Start-Hide.cmd / 启动.cmd**。
-3. 在 Windows 托盘找到 Hide。开始在可编辑区域输入文字，默认指针变为 **75% 透明**。
+2. 打开 Hide 文件夹，双击 **Hide.exe**。首次会显示设置与托盘，检查 **随 Windows 登录启动**已勾选、状态显示已启用。
+3. 关闭设置窗口后继续运行。开始在可编辑区域输入文字或使用 Backspace 删除，默认指针变为 **75% 透明**。
 4. 移动超过约 3 个屏幕像素、点击或滚动鼠标，指针恢复。停止输入约 1.5 秒后也会恢复。
 5. 在 **Windows 鼠标属性 → 指针** 应用另一套皮肤，Hide 会自动重新识别。准备期间指针保持正常显示。
 
@@ -22,9 +22,30 @@ Hide 是一款轻量级 Windows 鼠标工具。开始输入文字时自动淡化
 
 ## 功能与设置
 
-右键托盘可选择启用／暂停、50%／75%／90% 透明或完全隐藏、停止输入恢复、随 Windows 启动，以及当前应用的检测方式。开机启动默认关闭。
+双击 Hide.exe 或 **Open-Settings.cmd / 设置.cmd** 打开已有实例的设置，不启动第二个输入引擎。设置提供启用／暂停、50%／75%／90% 透明或完全隐藏、停止输入恢复、登录自启和托盘选择。新安装默认启用自启；已有用户的选择保持原样，已禁用的任务不会自行重新开启。
 
-**启用开机启动**：右键 Hide 托盘图标 → 勾选 **随 Windows 启动**。以后登录 Windows 时自动启动；取消勾选即可关闭。文件夹移动后，请在新位置重新启用。也可执行 Hide.exe --enable-startup／--disable-startup，无需管理员权限。
+## 选择静默运行
+
+1. 打开设置，保持 **随 Windows 登录启动**勾选。
+2. 取消 **显示托盘图标**。Hide 会创建 **Hide 设置**桌面快捷方式，然后隐藏托盘；输入淡化和登录自启继续工作。
+3. 关闭设置窗口。以后双击桌面快捷方式、按 **Ctrl+Alt+H**，或双击 Hide.exe 即可再打开设置。
+
+![Hide 设置：取消显示托盘即可静默](docs/images/hide-settings.png)
+
+图中演示已选择静默；新安装最初勾选“显示托盘图标”。
+
+也可点击 **创建桌面设置快捷方式**。快捷方式使用原 Hide 图标，不依赖 Codex。移动程序文件夹后，请更新启动项和快捷方式。
+
+| 操作 | 结果 |
+| --- | --- |
+| 关闭设置窗口 | 后台继续运行 |
+| 取消显示托盘 | 静默运行，功能与自启保留 |
+| 退出 Hide | 恢复指针并停止；下次登录仍自动启动 |
+| 取消登录自启 | 当前实例继续运行，后续不自动拉起 |
+
+**启用开机启动**：打开设置 → 勾选 **随 Windows 登录启动**。优先使用当前用户的 Windows 计划任务，登录后延迟约 10 秒启动。现有守护兼任监督进程，主程序异常时先恢复指针，再最多重试 3 次；另有每分钟一次的 Windows 健康检查，补上监督进程也退出的情况。正常退出暂停健康检查，下次登录或明确启动时恢复；取消自启动后不再自动拉起。没有固定运行时长上限，不因进入电池供电而停止。任务无法登记且没有现有任务时保留传统启动项后备，设置显示实际渠道。移动文件夹后请在新位置重新开启。也可执行 Hide.exe --enable-startup／--disable-startup。
+
+如需每个应用的检测选项，保留托盘并右键操作；静默后也可重新勾选 **显示托盘图标**。
 
 - **自动跟随当前鼠标皮肤**：整套更换、部分角色更换、混合皮肤及原文件内容更新均会重新识别。
 - **重新识别当前皮肤**：用于手动刷新。
@@ -50,15 +71,15 @@ Hide 是一款轻量级 Windows 鼠标工具。开始输入文字时自动淡化
 
 **Ctrl+Alt+F12：立即恢复并暂停。** 再次启用请使用托盘菜单。
 
-退出时右键托盘 → **退出并恢复皮肤**。遇到异常，双击 **Recover-Cursor.cmd / 恢复鼠标.cmd**。
+退出时打开设置 → **退出 Hide**，或右键可选托盘 → **退出并恢复皮肤**。关闭设置窗口会继续运行。遇到异常，双击 **Recover-Cursor.cmd / 恢复鼠标.cmd**。
 
 主程序配有独立恢复守护。淡化使用内存中的系统指针对象，恢复时装载用户当前的配置；用户在淡化期间换皮肤，退出或崩溃恢复也保留新选择。新版不修改指针阴影偏好。动画切换可能从第一帧重新开始。
 
-state/ 保存个人设置、临时缓存及恢复标记，常驻不记录输入文字，不逐键写日志。升级、移动或删除文件前，请先正常退出。卸载前取消已启用的开机启动。
+state/ 保存个人设置、临时缓存及恢复标记。lifecycle.log 记录带 UTC 时间的启动、故障、恢复和退出，日志轮转保留一份，常驻不记录输入文字，不逐键写日志。--status 请求实时状态，未运行时返回 running=false，避免旧状态被当作在线。升级、移动或删除文件前，请先正常退出。卸载前取消已启用的开机启动。
 
 ## 验证与资源占用
 
-[完整验证报告](docs/VALIDATION.md) · [可复核数据](evidence/) · [更新记录](CHANGELOG.md)
+[v1.1.0 验证](docs/QUIET-VALIDATION.md) · [v1.0.0 验证](docs/VALIDATION.md) · [可复核数据](evidence/) · [更新记录](CHANGELOG.md)
 
 - 输入状态测试通过 20,104 条断言；原生光标测试通过 18,594 个检查，覆盖格式边界、动画元数据及实际背景混合效果。
 - 17 个系统角色保留测试 ANI 的全部指定帧；实测避免了复制动画句柄导致的动画丢失。
@@ -67,6 +88,7 @@ state/ 保存个人设置、临时缓存及恢复标记，常驻不记录输入�
 - 单独 Backspace 与连续删除的受控测试通过：75% 透明时指针保持可见，移动后恢复；系统打字隐藏状态的暂停、退出及崩溃恢复检查通过。
 - 1,000 次恢复测试的 40 个淡化耗时样本，P95 约 62 ms；此指标是执行淡化的时间，区别于完整输入延迟。
 - 内存、CPU 的短时测量和长期验证范围见报告。真实锁屏／休眠及跨应用测试仍需扩展。
+- v1.1.0 换肤矩阵与 500 次恢复通过；当前合计私有内存约 7 MiB。计划 8 小时的观测中断，仅收集约 12 分钟空闲数据，未作为长期通过结论。
 
 发现问题请提交 [Issue](https://github.com/DeriitoMe/Hide/issues)，附 Windows 版本、皮肤、相关应用及复现步骤。
 
